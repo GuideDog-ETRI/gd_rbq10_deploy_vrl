@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  CycloneDDS config for the rbq_sdk bus, which is the only DDS CAMEL-Pilot
+  speaks. It is small because Pilot has no ROS2 graph and no camera stream.
+
+  WHY THIS FILE EXISTS AT ALL: loopback is not multicast-capable, so on "lo"
+  CycloneDDS disables multicast and SPDP discovery never completes -- the
+  process comes up fine and not one topic is ever matched. Naming localhost as
+  an explicit unicast peer is what makes a same-host sim work. The same escape
+  hatch covers a real NIC whose link drops multicast (managed switch eating
+  239.255.0.1, VPN, ...): name the peers and SPDP goes unicast.
+
+  CycloneDDS expands the ${...} placeholders from the environment when the
+  participant is created, so they must be set BEFORE ChannelFactory::Init:
+
+    RBQ_SDK_IFACE      NIC the SDK bus rides on. "lo" only reaches a robot or
+                       simulator on this same host; a distributed setup must
+                       name the NIC facing the robot (e.g. "enp2s0").
+    RBQ_SDK_PEERS      Comma-separated unicast discovery peers. Empty falls
+                       back to localhost.
+    RBQ_SDK_MULTICAST  Derived from the interface by RbqLink -- loopback forces
+    RBQ_SDK_ALLOW_MC   both to false, a real NIC leaves the SDK's own config in
+                       place instead of loading this file at all.
+
+  An empty value counts as unset, so the defaults below take effect: they
+  describe the same-host loopback case, which is what an unconfigured run gets.
+
+  Domain Id="any" rather than a number: the domain is picked at Init() time
+  (RBQ_SDK_DOMAIN, default 0), and this file should not become a second place
+  that has to agree with it.
+
+  Keep this file free of double hyphens: they are illegal inside an XML comment.
+-->
+<CycloneDDS xmlns="https://cdds.io/config">
+  <Domain Id="any">
+    <General>
+      <Interfaces>
+        <NetworkInterface name="${RBQ_SDK_IFACE:-lo}" multicast="${RBQ_SDK_MULTICAST:-false}"/>
+      </Interfaces>
+      <AllowMulticast>${RBQ_SDK_ALLOW_MC:-false}</AllowMulticast>
+    </General>
+    <Discovery>
+      <ParticipantIndex>auto</ParticipantIndex>
+      <Peers><Peer address="${RBQ_SDK_PEERS:-localhost}"/></Peers>
+    </Discovery>
+  </Domain>
+</CycloneDDS>
