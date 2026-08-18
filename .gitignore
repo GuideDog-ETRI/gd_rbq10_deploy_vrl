@@ -1,0 +1,10 @@
+build/
+build-*/
+cmake-build-*/
+dist/
+scripts/.appimage_tools/
+compile_commands.json
+.cache/
+*.user
+logs/
+.idea/
