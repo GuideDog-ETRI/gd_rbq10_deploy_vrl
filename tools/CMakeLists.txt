@@ -10,13 +10,17 @@
 # Pilot 과 공존도 못 한다. 소스는 대조용으로만 남겨 뒀다 —
 # extern/rbq_sdk/example/README.md.
 
+find_package(Qt6 REQUIRED COMPONENTS Core)   # PolicyRuntime 의 QJson
+
 add_executable(policy-check
     src/policy_check.cpp
     ${CMAKE_SOURCE_DIR}/pilot/src/PolicyBackend.cpp
+    ${CMAKE_SOURCE_DIR}/pilot/src/PolicyRuntime.cpp
 )
 target_include_directories(policy-check PRIVATE ${CMAKE_SOURCE_DIR}/pilot/src)
 target_link_libraries(policy-check PRIVATE
     wire                  # include/common — Log.hpp, Constants.hpp
     rbq_sdk::rbq_sdk
     onnxruntime::onnxruntime
+    Qt6::Core            # PolicyRuntime 이 QJson 으로 camel.policy.v1 을 읽는다
 )

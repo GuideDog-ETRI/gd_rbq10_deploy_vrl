@@ -24,7 +24,12 @@
 // 같은 onnxruntime 으로 세션을 연다. 우리가 다시 구현한 파서가 통과시키는 것은
 // 증거가 아니다.
 //
-//   ./build/tools/policy-check <policyDir>
+// 계약(`camel.policy.v1`)을 들고 오는 .onnx 는 위의 함정이 성립하지 않는다 —
+// 항 순서도 관절 순서도 파일이 말한다. 대신 Pilot 이 못 채우는 항과 500 Hz 로
+// 나눠떨어지지 않는 policy_dt 를 여기서 거른다.
+//
+//   ./build/tools/policy-check <policyDir>       벤더 규격 (info.json + policy.onnx)
+//   ./build/tools/policy-check <policy.onnx>     camel.policy.v1 계약 (또는 레거시)
 //   echo $?      0 = 통과(경고는 있을 수 있음), 1 = 계약 위반, 2 = 사용법
 //
 // 새로 받은 정책 디렉터리는 이 검사를 통과시킨 뒤 resources/policy/<이름>/ 에 둔다.
@@ -33,6 +38,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <memory>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -44,7 +50,11 @@
 #include "nlohmann/json.hpp"
 #include "rbq_sdk/Policy.hpp"
 
+#include <QJsonArray>
+#include <QJsonObject>
+
 #include "PolicyBackend.hpp"   // 로봇에서 obs 를 조립할 바로 그 코드
+#include "PolicyRuntime.hpp"   // camel.policy.v1 계약 파서 — 로봇이 쓰는 그것
 
 namespace {
 
@@ -75,17 +85,170 @@ std::string shapeStr(const std::vector<int64_t>& s) {
     return out + "]";
 }
 
+
+// 계약 검증은 PolicyRuntime 생성자가 전부 한다. 여기서 더 보는 것은 둘뿐이다:
+// Pilot 이 그 항들을 채울 수 있는가, 정지 자세에서 가만히 있는가.
+int checkMetaPolicy(const std::string& modelPath) {
+    std::printf("policy-check %s\n", modelPath.c_str());
+
+    section("files");
+    if (!std::filesystem::exists(modelPath)) {
+        fail(modelPath + " 없음");
+        return 1;
+    }
+    ok(modelPath + " (" + std::to_string(std::filesystem::file_size(modelPath)) + " bytes)");
+
+    section("camel.policy.v1 metadata");
+    bool hasMeta = false;
+    try {
+        hasMeta = PolicyRuntime::hasMetadata(modelPath);
+    } catch (const std::exception& e) {
+        fail(std::string("ONNX 열기 실패: ") + e.what());
+        return 1;
+    }
+    if (!hasMeta) {
+        std::printf("  skip  계약 없음 — 레거시 정책이다 (PolicyBackend 의 Dream 경로).\n");
+        return 0;
+    }
+    ok("있음");
+
+    std::unique_ptr<PolicyRuntime> rt;
+    try {
+        rt = std::make_unique<PolicyRuntime>(modelPath);
+    } catch (const std::exception& e) {
+        fail(std::string("계약 거부: ") + e.what());
+        std::printf("\n로봇에서도 같은 자리에서 거부한다 — 그것이 이 계약의 요점이다.\n");
+        return 1;
+    }
+    ok("PolicyRuntime 생성 통과 (스펙·그래프·상태 바인딩 전부)");
+
+    section("계약 내용");
+    const auto& spec = rt->spec();
+    std::printf("  robot=%s  schema=%d  policy_dt=%.4fs  history_init=%s  action=%s\n",
+                spec["robot"].toString().toStdString().c_str(),
+                spec["schema_version"].toInt(), rt->policyDt(),
+                spec["history_initialization"].toString().toStdString().c_str(),
+                spec["action"].toObject()["type"].toString().toStdString().c_str());
+    for (const auto& v : spec["terms"].toArray()) {
+        const auto t = v.toObject();
+        std::printf("    term  %-20s %-18s size %-5d history %d\n",
+                    t["name"].toString().toStdString().c_str(),
+                    t["source"].toString().toStdString().c_str(),
+                    t["size"].toInt(), t["history"].toInt());
+    }
+    for (const auto& v : spec["inputs"].toArray()) {
+        const auto in = v.toObject();
+        std::vector<int64_t> shape;
+        for (const auto& d : in["shape"].toArray()) shape.push_back(d.toInt());
+        std::printf("    input %-20s %-12s role=%s%s%s\n",
+                    in["name"].toString().toStdString().c_str(), shapeStr(shape).c_str(),
+                    in["role"].toString().toStdString().c_str(),
+                    in.contains("layout") ? " layout=" : "",
+                    in["layout"].toString().toStdString().c_str());
+    }
+
+    section("policy_dt — RlWalker 500 Hz 와 나눠떨어지는가");
+    const double ticks = rt->policyDt() / 0.002;
+    if (ticks < 1 || std::fabs(ticks - std::round(ticks)) > 1e-5) {
+        fail("policy_dt " + std::to_string(rt->policyDt()) +
+             " s 가 2 ms 의 정수배가 아니다 — 학습 주기로 돌 수 없다");
+    } else {
+        char buf[96];
+        std::snprintf(buf, sizeof buf, "%.4f s → decimation %d → 추론 %.0f Hz",
+                      rt->policyDt(), int(std::round(ticks)), 1.0 / rt->policyDt());
+        ok(buf);
+    }
+
+    section("입력 소스 — Pilot 이 채울 수 있는가");
+    for (const auto& src : rt->sources()) {
+        if (src.first == "height_depth" || src.first == "depth_normalized") {
+            fail("\"" + src.first + "\" 를 요구한다 — Pilot 에 그 입력이 없다");
+        } else {
+            ok("\"" + src.first + "\" (" + std::to_string(src.second.size()) + ") — Pilot 이 채운다");
+        }
+    }
+
+    section("게인 / 관절 순서");
+    {
+        char buf[160];
+        std::snprintf(buf, sizeof buf, "kp %.2f..%.2f  kd %.2f..%.2f (12 관절, metadata 값 그대로 액추에이터로 간다)",
+                      *std::min_element(rt->gains().kp.begin(), rt->gains().kp.end()),
+                      *std::max_element(rt->gains().kp.begin(), rt->gains().kp.end()),
+                      *std::min_element(rt->gains().kd.begin(), rt->gains().kd.end()),
+                      *std::max_element(rt->gains().kd.begin(), rt->gains().kd.end()));
+        ok(buf);
+    }
+    int motorOf[12];
+    bool mapOk = true;
+    for (int i = 0; i < 12; ++i) {
+        motorOf[i] = PolicyBackend::metaMotorIndex(rt->jointNames()[i]);
+        if (motorOf[i] < 0) { fail("모르는 관절 이름: " + rt->jointNames()[i]); mapOk = false; }
+    }
+    if (mapOk) ok("joint_names 12개 → 모터 순서 [HR,HL,FR,FL]×(R,P,K) 매핑 성립");
+
+    // 같은 검사, 같은 이유다 (아래 본문 주석) — 기립 자세도 파일이 말한다.
+    section("정지 자세 추론 (Pilot PolicyBackend, 기립 자세 / 명령 0)");
+    if (g_fail) {
+        warn("앞의 실패 때문에 건너뛴다");
+    } else {
+        auto backend = PolicyBackend::create(modelPath);
+        if (!backend) {
+            fail("PolicyBackend::create 실패 — Pilot 이 이 정책을 못 싣는다");
+        } else {
+            const auto defaults = spec["default_joint_pos"].toArray();
+            RbqLink::Snapshot snap;
+            snap.quat[0] = 1.0;   // proj_grav = (0,0,-1)
+            for (int i = 0; i < 12; ++i) snap.pos[motorOf[i]] = defaults[i].toDouble();
+
+            const float cmd[3] = {0.f, 0.f, 0.f};
+            float target[12] = {};
+            backend->reset(snap);
+            if (!backend->infer(snap, cmd, target)) {
+                fail("추론 실패 (NaN/Inf 또는 계약 위반) — 로봇에서라면 즉시 Damp 다");
+            } else {
+                float dmax = 0.f;
+                int   worst = 0;
+                for (int i = 0; i < 12; ++i) {
+                    const float d = std::fabs(target[motorOf[i]] -
+                                              static_cast<float>(defaults[i].toDouble()));
+                    if (d > dmax) { dmax = d; worst = i; }
+                }
+                char buf[192];
+                std::snprintf(buf, sizeof buf,
+                              "관절 지령이 기립 자세에서 최대 %.3f rad (%.1f°) 벗어난다 [%s]",
+                              dmax, dmax * 57.29578f, rt->jointNames()[worst].c_str());
+                if (dmax > 0.35f)
+                    warn(std::string(buf) + " — 이만큼 밀면 계약과 로봇 규약이 어긋난 것을 의심한다");
+                else
+                    ok(buf);
+                std::printf("        (decimation %d → 추론 %d Hz)\n",
+                            backend->decimation(), 500 / backend->decimation());
+            }
+        }
+    }
+
+    std::printf("\n%s  (fail %d, warn %d)\n",
+                g_fail ? "계약 위반 — 로봇에 올리지 않는다" : "계약 통과",
+                g_fail, g_warn);
+    return g_fail ? 1 : 0;
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
     if (argc != 2) {
         std::fprintf(stderr,
-            "usage: %s <policyDir>\n"
-            "  policyDir 는 info.json 과 policy.onnx 를 담은 디렉터리 —\n"
-            "  rbq_low_level -p 에 넘길 바로 그 경로다.\n", argv[0]);
+            "usage: %s <policy>\n"
+            "  info.json 을 담은 디렉터리면 벤더 규격을 본다.\n"
+            "  그 외(디렉터리면 policy.onnx, 아니면 그 파일)는 camel.policy.v1 계약을 본다.\n", argv[0]);
         return 2;
     }
     const std::string dir = argv[1];
+
+    // PolicyBackend::create 와 같은 판정이다.
+    if (!std::filesystem::is_directory(dir)) return checkMetaPolicy(dir);
+    if (!std::filesystem::exists(dir + "/info.json")) return checkMetaPolicy(dir + "/policy.onnx");
+
     std::printf("policy-check %s\n", dir.c_str());
 
     // ---- 파일 -------------------------------------------------------------

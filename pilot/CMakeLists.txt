@@ -18,6 +18,8 @@ add_executable(CAMEL-Pilot
     src/RbqLink.cpp
     src/PolicyBackend.hpp
     src/PolicyBackend.cpp
+    src/PolicyRuntime.hpp
+    src/PolicyRuntime.cpp
     src/RlWalker.hpp
     src/RlWalker.cpp
     src/Supervisor.hpp

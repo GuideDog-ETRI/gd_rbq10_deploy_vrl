@@ -1,5 +1,9 @@
 #include "PolicyBackend.hpp"
 
+#include "PolicyRuntime.hpp"
+
+#include <QJsonArray>
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -25,6 +29,17 @@ int PolicyBackend::vendorObsDim(const std::string& runName) {
     if (runName == "rbq10_trot")     return 130;  // 9 + 4*12 + 4*12 + 2*12 + 1
     if (runName == "rbq10_trot_run") return 130;
     return -1;
+}
+
+// joint_names (FL/FR/HL/HR × HIP/THIGH/KNEE) → 모터 [HR, HL, FR, FL] × (R, P, K).
+int PolicyBackend::metaMotorIndex(const std::string& jointName) {
+    const std::string leg = jointName.substr(0, 2);
+    const int base = leg == "FL" ? 9 : leg == "FR" ? 6 : leg == "HL" ? 3
+                   : leg == "HR" ? 0 : -1;
+    const int joint = jointName.find("HIP")   != std::string::npos ? 0
+                    : jointName.find("THIGH") != std::string::npos ? 1
+                    : jointName.find("KNEE")  != std::string::npos ? 2 : -1;
+    return (base < 0 || joint < 0) ? -1 : base + joint;
 }
 
 namespace {
@@ -485,6 +500,120 @@ private:
     std::vector<float> m_obs;
 };
 
+
+// ===========================================================================
+// Meta — 정책이 자기 계약을 들고 온다 (`camel.policy.v1`)
+//
+// 규격은 전부 PolicyRuntime 이 파일에서 읽는다. 여기는 로봇을 붙이는 어댑터다 —
+// Snapshot → sources(), targets() → 모터 순서, 추론 주기와 게인.
+// ===========================================================================
+
+class MetaBackend final : public PolicyBackend {
+public:
+    // 짐을 싣게 되면 여기가 설정으로 나가야 한다 (스케일은 계약의 transform 이 갖는다).
+    static constexpr float kPayloadKg = 0.f;
+
+    bool load(const std::string& path) {
+        m_rt = std::make_unique<PolicyRuntime>(path);
+
+        const double ticks = m_rt->policyDt() / (kLoopUs * 1e-6);
+        if (ticks < 1 || std::fabs(ticks - std::round(ticks)) > 1e-5) {
+            FILE_LOG_AS(logERROR, "RLWALK")
+                << "policy_dt " << m_rt->policyDt() << "s 가 " << kLoopUs
+                << "us 의 정수배가 아니다 — RlWalker 는 500 Hz 고정이다";
+            return false;
+        }
+        m_decimation = static_cast<int>(std::round(ticks));
+
+        for (const auto& src : m_rt->sources()) {
+            if (src.first == "height_depth" || src.first == "depth_normalized") {
+                FILE_LOG_AS(logERROR, "RLWALK")
+                    << "\"" << src.first << "\" 를 요구한다 — Pilot 에 그 입력이 없다";
+                return false;
+            }
+        }
+
+        const auto defaults = m_rt->spec()["default_joint_pos"].toArray();
+        for (int i = 0; i < 12; ++i) {
+            const std::string& name = m_rt->jointNames()[i];
+            m_motor[i] = PolicyBackend::metaMotorIndex(name);
+            if (m_motor[i] < 0) {
+                FILE_LOG_AS(logERROR, "RLWALK") << "모르는 관절 이름: " << name;
+                return false;
+            }
+            m_defaultPos[i] = static_cast<float>(defaults[i].toDouble());
+        }
+
+        m_desc = path + " (Meta, camel.policy.v1, policy_dt=" +
+                 std::to_string(m_rt->policyDt()) + "s, 추론 " +
+                 std::to_string(500 / m_decimation) + " Hz)";
+        FILE_LOG_AS(logSUCCESS, "RLWALK") << "policy loaded: " << m_desc;
+        {
+            std::string terms;
+            for (const auto& src : m_rt->sources()) terms += (terms.empty() ? "" : ", ") + src.first;
+            FILE_LOG_AS(logINFO, "RLWALK")
+                << "metadata sources: " << terms
+                << " | kp[0]=" << m_rt->gains().kp[0] << " kd[0]=" << m_rt->gains().kd[0]
+                << (m_rt->sources().count("payload") ? " | payload " : " | payload -")
+                << (m_rt->sources().count("payload") ? std::to_string(kPayloadKg) + " kg" : "");
+        }
+        return true;
+    }
+
+    int decimation() const override { return m_decimation; }
+
+    void gains(float kp[12], float kd[12]) const override {
+        for (int i = 0; i < 12; ++i) {
+            kp[m_motor[i]] = static_cast<float>(m_rt->gains().kp[i]);
+            kd[m_motor[i]] = static_cast<float>(m_rt->gains().kd[i]);
+        }
+    }
+
+    void reset(const RbqLink::Snapshot&) override { m_rt->reset(); }
+
+    bool infer(const RbqLink::Snapshot& snap, const float cmd[3],
+               float targetPos[12]) override {
+        const Eigen::Vector3d grav = projectedGravity(snap);
+        // previous_action 과 clock 은 PolicyRuntime 이 스스로 채운다.
+        for (auto& src : m_rt->sources()) {
+            auto& v = src.second;
+            const auto& name = src.first;
+            if (name == "angular_velocity")
+                for (int i = 0; i < 3; ++i) v[i] = static_cast<float>(snap.gyro[i]);
+            else if (name == "gravity")
+                for (int i = 0; i < 3; ++i) v[i] = static_cast<float>(grav[i]);
+            else if (name == "command")
+                for (int i = 0; i < 3; ++i) v[i] = cmd[i];
+            else if (name == "payload") v[0] = kPayloadKg;
+            else if (name == "joint_position_rel")
+                for (int i = 0; i < 12; ++i)
+                    v[i] = static_cast<float>(snap.pos[m_motor[i]]) - m_defaultPos[i];
+            else if (name == "joint_velocity")
+                for (int i = 0; i < 12; ++i) v[i] = static_cast<float>(snap.vel[m_motor[i]]);
+        }
+
+        try {
+            m_rt->step();
+        } catch (const std::exception& e) {
+            FILE_LOG_AS(logERROR, "RLWALK") << "정책 추론 실패: " << e.what();
+            return false;   // 호출자가 Damp
+        }
+        for (int i = 0; i < 12; ++i) targetPos[m_motor[i]] = m_rt->targets()[i];
+        return true;
+    }
+
+    std::string describe() const override { return m_desc; }
+
+private:
+    static constexpr int kLoopUs = 2000;   // RlWalker::kLoopUs
+
+    std::unique_ptr<PolicyRuntime> m_rt;
+    std::string m_desc;
+    int   m_decimation = 1;
+    int   m_motor[12]  = {};
+    float m_defaultPos[12] = {};
+};
+
 }  // namespace
 
 std::unique_ptr<PolicyBackend> PolicyBackend::create(const std::string& path) {
@@ -492,25 +621,33 @@ std::unique_ptr<PolicyBackend> PolicyBackend::create(const std::string& path) {
     std::error_code ec;
 
     try {
-        // 디렉터리 + info.json = 벤더 규격. 그 외엔 .onnx 파일 하나짜리 Dream.
+        std::string model = path;
+
         if (fs::is_directory(path, ec)) {
-            if (!fs::exists(path + "/info.json", ec)) {
+            if (fs::exists(path + "/info.json", ec)) {
+                auto backend = std::make_unique<VendorBackend>();
+                if (!backend->load(path)) return nullptr;
+                return backend;
+            }
+            model = path + "/policy.onnx";
+            if (!fs::exists(model, ec)) {
                 FILE_LOG_AS(logERROR, "RLWALK")
-                    << path << " is a directory but has no info.json — "
-                    << "vendor policies need {info.json, policy.onnx}";
+                    << path << " has neither info.json (vendor) nor policy.onnx";
                 return nullptr;
             }
-            auto backend = std::make_unique<VendorBackend>();
-            if (!backend->load(path)) return nullptr;
-            return backend;
-        }
-
-        if (!fs::exists(path, ec)) {
+        } else if (!fs::exists(path, ec)) {
             FILE_LOG_AS(logERROR, "RLWALK") << "policy not found: " << path;
             return nullptr;
         }
+
+        // 계약이 있는데 깨졌다면 폴백이 아니라 에러다.
+        if (PolicyRuntime::hasMetadata(model)) {
+            auto backend = std::make_unique<MetaBackend>();
+            if (!backend->load(model)) return nullptr;
+            return backend;
+        }
         auto backend = std::make_unique<DreamBackend>();
-        if (!backend->load(path)) return nullptr;
+        if (!backend->load(model)) return nullptr;
         return backend;
     } catch (const Ort::Exception& e) {
         FILE_LOG_AS(logERROR, "RLWALK") << "ONNX load failed: " << e.what();

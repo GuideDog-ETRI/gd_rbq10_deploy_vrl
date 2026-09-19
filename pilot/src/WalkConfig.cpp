@@ -109,37 +109,26 @@ WalkConfig WalkConfig::load() {
     const std::string name =
         value("RBQ_POLICY_FILE",
               value(sdk ? "RBQ_POLICY_SDK" : "RBQ_POLICY_OURS",
-                    sdk ? "rbq10" : "d_v3.6.21_b1_18_bare.onnx"));
+                    sdk ? "rbq10" : "d_v3.6.21_b1_18"));
 
     const std::string path = std::string(kPolicyRoot) + name;
     cfg.m_policyPath = path;
 
-    // ---- 모드와 모양이 맞는가 ----------------------------------------------
-    //
-    // PolicyBackend 는 경로 모양으로 규격을 고르므로, 여기서 안 막으면 sdk 라고
-    // 적어 놓고 Dream 이 도는 조합이 조용히 성립한다. 걷기는 걷고 로그도 멀쩡해서
-    // 아무도 모른다 — 그래서 기동에서 끊는다.
-    //
-    // 판정 API 를 PolicyBackend::create 와 같은 것(std::filesystem)으로 맞춘다 —
-    // "모드 검사"와 "백엔드 선택"이 같은 사실을 보고 있다는 뜻이 된다.
+    // 여기서 안 막으면 sdk 라고 적어 놓고 우리 정책이 도는 조합이 조용히 성립한다.
+    // 걷기는 걷고 로그도 멀쩡해서 아무도 모른다 — 그래서 기동에서 끊는다.
+    // 판정은 PolicyBackend::create 와 같은 사실(info.json 유무)을 본다.
     std::error_code ec;
-    const bool exists = std::filesystem::exists(path, ec);
-    const bool isDir  = std::filesystem::is_directory(path, ec);
-    if (exists) {
-        if (sdk && !isDir) {
+    if (std::filesystem::exists(path, ec)) {
+        const bool vendorSpec = std::filesystem::exists(path + "/info.json", ec);
+        if (sdk != vendorSpec) {
             FILE_LOG_AS(logERROR, "WALK")
-                << "mode=sdk 인데 " << path
-                << " 가 파일이다. sdk 는 {info.json, policy.onnx} 를 담은 디렉터리다.";
-            cfg.m_policyPath.clear();
-        } else if (!sdk && isDir) {
-            FILE_LOG_AS(logERROR, "WALK")
-                << "mode=ours 인데 " << path
-                << " 가 디렉터리다. ours 는 .onnx 파일 하나다 (sdk 를 쓰려던 것 아닌가?).";
+                << "mode=" << cfg.modeName() << " 인데 " << path
+                << (vendorSpec ? " 는 info.json 을 가진 벤더 규격이다."
+                               : " 에 info.json 이 없다. sdk 는 {info.json, policy.onnx} 다.");
             cfg.m_policyPath.clear();
         }
     }
-    // 없는 경로는 여기서 판정하지 않는다 — PolicyBackend::create 가 그 이유를
-    // 훨씬 구체적으로 찍는다 (파일이 없는지, info.json 이 없는지).
+    // 없는 경로는 PolicyBackend::create 가 훨씬 구체적으로 찍는다.
 
     FILE_LOG_AS(logINFO, "WALK")
         << "mode=" << cfg.modeName()
