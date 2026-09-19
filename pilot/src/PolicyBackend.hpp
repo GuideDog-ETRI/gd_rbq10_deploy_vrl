@@ -7,22 +7,33 @@
 // action→관절각, 그리고 추론 주기·게인. 나머지(핸드셰이크 3규칙, 워치독, Damp,
 // ref 500 Hz 유지, 텔레메트리)는 어떤 정책을 싣든 같다. 그 넷만 여기로 내린다.
 //
-// 백엔드 둘:
+// 백엔드 셋:
 //
 //   Dream   우리 정책. DreamWaQ+CENet — direct 45 + cenet 225(H=5 이력) 2 입력,
 //           추론 50 Hz. 관절 순서를 ONNX 배치([FL,FR,HL,HR]×타입별)로 바꾼다.
 //           2026-08-17 실기 검증된 그 경로다 (코드는 RlWalker 에서 그대로 옮겨왔다).
+//           규격이 전부 이 파일의 상수다.
 //
-//   Vendor  Rainbow 규격. rbq_lab 이 내보낸 {info.json, policy.onnx} 를 그대로
-//           받는다 — 단일 입력 45(rbq10) 또는 130(rbq10_trot/_run), 추론 100 Hz,
-//           관절 순서 변환 없음(모터 순서 = info.json 의 joint0..11 순서).
-//           obs 조립은 SDK 예제 rbq_low_level.cpp:270-358 과 term 단위로 같다.
+//   Vendor  Rainbow 규격. 학습 결과물 {info.json, policy.onnx} 를 그대로 받는다 —
+//           단일 입력 45(rbq10) 또는 130(rbq10_trot/_run), 추론 100 Hz, 관절 순서
+//           변환 없음(모터 순서 = info.json 의 joint0..11 순서). 스케일·게인·
+//           기립자세는 info.json 이 말하지만 항 순서는 코드가 안다 — obs 조립은
+//           SDK 예제 rbq_low_level.cpp:270-358 과 term 단위로 같다.
 //
-// 어느 쪽인지는 경로 모양으로 갈린다: info.json 을 가진 **디렉터리**면 Vendor,
-// .onnx **파일**이면 Dream. 그래서 RBQ_POLICY_FILE 하나로 둘 다 고를 수 있다.
+//   Meta    정책이 자기 계약을 들고 온다. ONNX 메타데이터 `camel.policy.v1` 의
+//           JSON 이 규격 전부를 말한다 — 코드가 아는 규격이 없다 (PolicyRuntime.hpp).
 //
-//   RBQ_POLICY_FILE=d_v3.6.21_b1_18_bare.onnx   → Dream (기본값)
-//   RBQ_POLICY_FILE=rbq10                       → Vendor
+// 어느 쪽인지는 파일이 말한다. info.json 을 가진 디렉터리면 Vendor, 그 외에는
+// 모델(디렉터리면 policy.onnx, 아니면 그 파일) 안에 `camel.policy.v1` 이 있는지로
+// Meta / Dream 이 갈린다.
+//
+//   RBQ_POLICY_FILE=rbq10                 info.json 있음      → Vendor
+//   RBQ_POLICY_FILE=d_v3.6.21_b1_18       policy.onnx + 계약  → Meta
+//   RBQ_POLICY_FILE=legacy.onnx           계약 없음           → Dream
+//
+// Meta 가 기동에서 거부하는 계약 둘: Pilot 에 없는 입력(height_depth,
+// depth_normalized)을 요구하는 것, policy_dt 가 2 ms 의 정수배가 아닌 것
+// (ref 가 500 Hz 고정이다). 배포 전에는 tools/policy-check 가 같은 것을 본다.
 //
 // **왜 벤더 예제 바이너리를 쓰지 않는가:** rbq_low_level 은 정책을 돌리는 데는
 // 충분하지만 우리 안전장치가 하나도 없다 — Damp E-stop 도, 워치독도, 텔레메트리도,
@@ -46,6 +57,10 @@ public:
     // 두 벌이면 rbq_lab 이 이름을 하나 늘렸을 때 한쪽만 고쳐지고, 검사기는
     // 통과시키는데 로봇은 거부하는(또는 그 반대) 조합이 생긴다.
     static int vendorObsDim(const std::string& runName);
+
+    // 계약의 joint_names 이름 하나 → 모터 인덱스. 모르는 이름이면 -1.
+    // vendorObsDim 과 같은 이유로 여기 있다 — 백엔드와 검사기가 같은 표를 본다.
+    static int metaMotorIndex(const std::string& jointName);
 
     // path 가 info.json 을 가진 디렉터리면 Vendor, .onnx 파일이면 Dream.
     // 실패하면 nullptr (이유는 로그로).

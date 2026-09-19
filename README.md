@@ -125,19 +125,41 @@ QuadWalk 에 맡긴다. 바꾸면 재시작이 필요하다 (정책은 기동 �
 
 ```sh
 RBQ_WALK=ours                                # ours | sdk | vendor
-RBQ_POLICY_OURS=d_v3.6.21_b1_18_bare.onnx    # 고른 모드의 줄만 쓰인다 —
+RBQ_POLICY_OURS=d_v3.6.21_b1_18              # 고른 모드의 줄만 쓰인다 —
 RBQ_POLICY_SDK=rbq10                         # RBQ_WALK 한 줄로 A/B 가 된다
 ```
 
-| `RBQ_WALK` | 무엇이 걷는가 | 정책 경로 | 입력 | 추론 |
+| `RBQ_WALK` | 무엇이 걷는가 | 정책 경로 | 규격을 아는 곳 | 추론 |
 |---|---|---|---|---|
-| `ours` | 우리 DreamWaQ+CENet | `<name>.onnx` **파일** | 2개 — direct 45 + cenet 225 | 50 Hz |
-| `sdk` | 학습 결과물을 벤더 규격 그대로 | `<name>/` **디렉터리** | 1개 — `info.json` 규격 | 100 Hz |
+| `ours` | 우리 정책 | `<name>/` 또는 `<name>.onnx` | 모델 안의 계약, 없으면 코드 상수 | 계약값 / 50 Hz |
+| `sdk` | 학습 결과물을 벤더 규격 그대로 | `<name>/` + `info.json` | `info.json` + 코드(항 순서) | 100 Hz |
 | `vendor` | QuadWalk 의 `rl_trot` | — | — | — |
 
 `ours`/`sdk` 는 같은 `RlWalker` 위에서 백엔드만 다르다. `vendor` 는 소유권을 잡지
-않아서 벤더 안전장치가 살아 있는 유일한 모드이고, A/B 기준선이 된다. 모드와 정책
-파일의 모양이 어긋나면 기동에서 거부한다.
+않아서 벤더 안전장치가 살아 있는 유일한 모드이고, A/B 기준선이 된다. `sdk` 는
+`info.json` 을 가진 디렉터리이고 `ours` 는 그렇지 않은 것이라, 서로 바꿔 적으면
+기동에서 거부한다.
+
+### `ours` 의 두 갈래 — 계약을 들고 온 정책
+
+모델에 `camel.policy.v1` 메타데이터(JSON)가 실려 있으면 **규격을 코드가 아니라 그
+파일이 말한다** — obs 항 순서·스케일·이력 길이·관절 이름·게인·action 변환·추론 주기
+전부. 새 정책을 들일 때 고칠 C++ 가 없고, 어긋난 계약은 기동에서 거부된다 (차원만
+맞고 의미가 뒤섞인 obs 로 걷는 실패가 이 계약이 없애려는 것이다). 계약이 없는
+`.onnx` 는 규격 상수가 코드에 박힌 예전 경로로 실린다.
+
+계약을 들고 온 정책은 한 셋이 한 폴더다:
+
+```
+resources/policy/d_v3.6.21_b1_18/
+├── policy.onnx     가중치 + 계약
+├── deploy.json     실제로 실리는 계약 (사람이 읽는 사본)
+└── context.json    계약의 검토 내역
+```
+
+Pilot 이 못 싣는 계약 둘은 기동 전에 걸러진다: Pilot 에 없는 입력
+(`height_depth`, `depth_normalized`)을 요구하는 정책과, `policy_dt` 가 2 ms 의
+정수배가 아닌 정책(ref 스트림이 500 Hz 고정이다).
 
 우선순위는 **환경변수 > walk.env > 기본값** — 한 번만 다르게 띄울 때는 파일을 고치지 않는다:
 
@@ -148,16 +170,21 @@ RBQ_WALK=sdk RBQ_POLICY_FILE=rbq10 scripts/run.sh   # 이번만 이 정책으로
 
 ### 새 정책 들여오기
 
-학습 결과물(`{info.json, policy.onnx}` 디렉터리)을 `resources/policy/<이름>/` 으로 복사한 뒤
-**계약을 먼저 본다**:
+`resources/policy/` 아래에 두고 **계약을 먼저 본다** — 검사기는 로봇이 쓸 바로 그
+코드로 정책을 싣고 정지 자세에서 한 번 돌려 본다:
 
 ```bash
-./build/tools/policy-check resources/policy/rbq10
+./build/tools/policy-check resources/policy/rbq10             # 벤더 규격 (info.json)
+./build/tools/policy-check resources/policy/d_v3.6.21_b1_18   # 계약을 들고 온 정책
 ```
 
-런타임의 유일한 검사는 obs 총 차원 하나뿐이라, 항 순서나 관절 순서가 틀려도 에러
-없이 이상하게 걷는다. `policy-check` 가 차원·게인·ONNX 시그니처까지 보고,
-`scripts/deploy.sh` 도 배포 전에 같은 검사를 걸어 떨어지면 아무것도 보내지 않는다.
+벤더 규격에서 런타임의 유일한 검사는 obs 총 차원 하나뿐이라, 항 순서나 관절 순서가
+틀려도 에러 없이 이상하게 걷는다 — `policy-check` 가 차원·게인·ONNX 시그니처까지
+본다. 계약을 들고 온 파일이면 계약 내용을 전부 찍고, Pilot 이 채울 수 없는 항과
+추론 주기까지 본다. 계약이 없는 레거시 `.onnx` 는 그렇다고 말하고 통과시킨다.
+
+`scripts/deploy.sh` 가 배포 전에 `resources/policy/` 전체에 같은 검사를 걸고,
+하나라도 떨어지면 아무것도 보내지 않는다.
 
 ## 문서
 
@@ -167,7 +194,8 @@ RBQ_WALK=sdk RBQ_POLICY_FILE=rbq10 scripts/run.sh   # 이번만 이 정책으로
 |---|---|
 | `protocol/README.md` | 전선 계약 — 무엇을 지켜야 하고 고칠 때 무엇을 같이 해야 하는가 |
 | `pilot/src/RlWalker.hpp` | 소유권 핸드오프 3규칙, 안전 경계가 뒤집히는 지점 |
-| `pilot/src/PolicyBackend.hpp` | 정책 규격 두 종(Dream / Vendor)과 그 경계 |
+| `pilot/src/PolicyBackend.hpp` | 정책 규격 세 종(Dream / Vendor / Meta)과 그 경계 |
+| `pilot/src/PolicyRuntime.hpp` | 파일이 들고 온 계약(`camel.policy.v1`)을 읽는 곳 |
 | `pilot/src/HealthMonitor.hpp` | 계기가 무엇에 답하려고 있는가 (`--health`) |
 | `configs/walk.env` | WALK 세 모드 |
 | `configs/hosts.env` | 랩 토폴로지 |

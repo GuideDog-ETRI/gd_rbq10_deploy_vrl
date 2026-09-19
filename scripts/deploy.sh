@@ -32,8 +32,9 @@
 #                            헤더는 빌드용이라 안 간다)
 #   extern/onnxruntime/lib/  정책 추론 런타임 — 같은 방식 (PolicyBackend)
 #   resources/policy/        정책 — CONFIG_DIR/resources/policy/ 에서 찾는다.
-#                            .onnx 파일 하나면 ours(우리 정책), info.json 을 가진
-#                            디렉터리면 sdk(rbq_lab 규격). 무엇을 실을지는
+#                            info.json 을 가진 디렉터리면 sdk, 그 외에는 ours.
+#                            모델에 계약(`camel.policy.v1`)이 실려 있으면 그
+#                            계약대로 돈다 (PolicyBackend.hpp). 무엇을 실을지는
 #                            configs/walk.env 가 정한다 (WalkConfig.hpp)
 #   scripts/run.sh           타깃에서 띄우는 방법. 나머지 스크립트(run_sim.sh,
 #                            deploy.sh, make_appimage.sh)는 개발 PC 용이라 안 간다
@@ -172,29 +173,33 @@ say "RPATH names the target's vendored lib dir"
 # 하나다), 이 게이트가 유일하게 싼 방어선이다. 한 디렉터리라도 떨어지면
 # 아무것도 보내지 않는다.
 #
-# .onnx 파일 하나짜리 Dream 정책은 대상이 아니다 — info.json 이 없으니 볼 계약도
-# 없고, 그쪽은 RlWalker 가 입력 차원으로 자기 검사를 한다.
+# .onnx 파일도 같은 게이트를 지난다 — 계약(`camel.policy.v1`)을 들고 온 모델이면
+# 그 계약을 보고, 계약이 없는 레거시 모델이면 검사기가 그렇다고 말하고 통과시킨다
+# (그쪽은 RlWalker 가 입력 차원으로 자기 검사를 한다).
 CHECKER="${PROJECT_DIR}/${BUILD_DIR}/tools/policy-check"
-POLICY_DIRS=()
+POLICIES=()
 for d in "${PROJECT_DIR}"/resources/policy/*/; do
-    [ -f "${d}info.json" ] && POLICY_DIRS+=("${d%/}")
+    { [ -f "${d}info.json" ] || [ -f "${d}policy.onnx" ]; } && POLICIES+=("${d%/}")
 done
-if [ "${#POLICY_DIRS[@]}" -gt 0 ]; then
+for f in "${PROJECT_DIR}"/resources/policy/*.onnx; do
+    [ -f "$f" ] && POLICIES+=("$f")
+done
+if [ "${#POLICIES[@]}" -gt 0 ]; then
     if [ ! -x "${CHECKER}" ]; then
-        echo "ERROR: ${CHECKER} missing — 벤더 규격 정책을 검사하지 않고 보낼 수 없다." >&2
+        echo "ERROR: ${CHECKER} missing — 정책 계약을 검사하지 않고 보낼 수 없다." >&2
         echo "Rebuild without --no-build (BUILD_TOOLS=ON)." >&2
         exit 1
     fi
-    say "checking policy contracts (${#POLICY_DIRS[@]} dir(s))"
+    say "checking policy contracts (${#POLICIES[@]} policies)"
     FAILED=0
-    for d in "${POLICY_DIRS[@]}"; do
+    for d in "${POLICIES[@]}"; do
         "${CHECKER}" "$d" || FAILED=1
     done
     [ "${FAILED}" -eq 0 ] || {
         echo "ERROR: 계약을 어긴 정책이 있다. 아무것도 보내지 않는다." >&2
         exit 1
     }
-    say "all vendor-contract policies pass"
+    say "all policy contracts pass"
 fi
 
 # ---- 타깃 준비 ---------------------------------------------------------------
@@ -268,7 +273,7 @@ ssh "${TARGET}" "
     cd '${DEPLOY_PATH}'
     for f in build/CAMEL-Pilot configs/cyclonedds.xml configs/hosts.env scripts/run.sh \
              extern/onnxruntime/lib/libonnxruntime.so.1 \
-             resources/policy/d_v3.6.21_b1_18_bare.onnx; do
+             resources/policy/d_v3.6.21_b1_18/policy.onnx; do
         [ -e \"\$f\" ] || { echo \"missing: \$f\"; exit 1; }
     done
     # 로더에게 직접 묻는다. 모자라는 .so 는 누가 처음 띄웠을 때에야
