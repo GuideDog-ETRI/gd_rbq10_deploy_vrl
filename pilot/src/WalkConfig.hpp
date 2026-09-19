@@ -35,6 +35,9 @@ public:
     // Ours/Sdk 일 때 PolicyBackend 에 넘길 절대경로. Vendor 면 비어 있다.
     const std::string& policyPath() const { return m_policyPath; }
 
+    // 지금 실린 짐 (kg). payload 항을 가진 정책만 쓴다.
+    float payloadKg() const { return m_payloadKg; }
+
     // 이 모드가 우리 정책을 돌리는가 (= `_20` 소유권을 잡는가).
     bool runsOwnPolicy() const { return !vendorGait(); }
 
@@ -44,4 +47,5 @@ public:
 private:
     Mode        m_mode = Mode::Ours;
     std::string m_policyPath;
+    float       m_payloadKg = 0.f;
 };

@@ -170,7 +170,8 @@ int main(int argc, char** argv) {
 
     RlWalker walker(rbq);
     if (walkCfg.runsOwnPolicy()) {
-        if (walkCfg.policyPath().empty() || !walker.init(walkCfg.policyPath()))
+        if (walkCfg.policyPath().empty() ||
+            !walker.init(walkCfg.policyPath(), walkCfg.payloadKg()))
             FILE_LOG(logWARNING) << "RlWalker unavailable — WALK falls back to vendor rl_trot";
     }
 

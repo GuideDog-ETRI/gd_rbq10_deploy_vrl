@@ -71,8 +71,7 @@ public:
     // (ChannelFactory 가 그쪽에서 선다). 실패해도 프로세스는 계속 간다 — WALK 가
     // 벤더 rl_trot 으로 폴백할 근거를 ready() 가 준다.
     //
-    // policyPath 는 .onnx 파일(Dream) 또는 info.json 을 가진 디렉터리(Vendor).
-    bool init(const std::string& policyPath);
+    bool init(const std::string& policyPath, float payloadKg);
     bool ready() const { return m_ready; }
 
     // 전부 Qt 이벤트 루프 스레드에서. 루프 스레드가 요청을 소비한다.

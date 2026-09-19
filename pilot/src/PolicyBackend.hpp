@@ -62,9 +62,8 @@ public:
     // vendorObsDim 과 같은 이유로 여기 있다 — 백엔드와 검사기가 같은 표를 본다.
     static int metaMotorIndex(const std::string& jointName);
 
-    // path 가 info.json 을 가진 디렉터리면 Vendor, .onnx 파일이면 Dream.
-    // 실패하면 nullptr (이유는 로그로).
-    static std::unique_ptr<PolicyBackend> create(const std::string& path);
+    // 실패하면 nullptr (이유는 로그로). payloadKg 는 payload 항을 가진 정책만 쓴다.
+    static std::unique_ptr<PolicyBackend> create(const std::string& path, float payloadKg = 0.f);
 
     // 500 Hz 틱 몇 개마다 추론하는가. 학습 decimation 과 같아야 한다.
     virtual int decimation() const = 0;
