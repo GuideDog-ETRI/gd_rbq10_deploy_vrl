@@ -84,11 +84,8 @@ public:
     static constexpr int kStepDim    = 45;   // ang3+grav3+cmd3+pos12+vel12+act12
     static constexpr int kDecimation = 10;   // 추론 50 Hz
 
-    // payload 조건화 모델(46/230)에 싣는 값. 당분간 무부하 운용이라 상수다 —
-    // 짐을 싣게 되면 여기가 다시 설정으로 나가야 한다.
-    static constexpr float kPayloadKg = 0.f;
-
-    bool load(const std::string& modelPath) {
+    bool load(const std::string& modelPath, float payloadKg) {
+        m_payloadKg = payloadKg;
         m_env = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "camel_rlwalk");
 
         Ort::SessionOptions opts;
@@ -118,10 +115,14 @@ public:
         m_cenetObs.assign(kH * step, 0.f);
 
         // payload 조건화 모델(46/230)에만 실린다. 학습 스케일 {0,5} kg -> {0,1}.
-        m_payloadObs = kPayloadKg * 0.2f;
-        if (m_hasPayloadObs)
+        m_payloadObs = m_payloadKg * 0.2f;
+        if (m_hasPayloadObs) {
             FILE_LOG_AS(logSUCCESS, "RLWALK")
-                << "payload-conditioned policy: " << kPayloadKg << " kg (obs " << m_payloadObs << ")";
+                << "payload-conditioned policy: " << m_payloadKg << " kg (obs " << m_payloadObs << ")";
+            if (m_payloadObs > 1.f)
+                FILE_LOG_AS(logWARNING, "RLWALK")
+                    << m_payloadKg << " kg 는 학습 범위 {0,5} kg 밖이다 (obs " << m_payloadObs << " > 1)";
+        }
 
         m_desc = modelPath + (m_hasPayloadObs ? " (Dream, payload-conditioned 46/230)"
                                               : " (Dream, 45/225)");
@@ -262,6 +263,7 @@ private:
 
     std::string m_desc;
     bool  m_hasPayloadObs = false;
+    float m_payloadKg     = 0.f;
     float m_payloadObs    = 0.f;
 
     std::array<float, 12> m_prevAction{};
@@ -510,10 +512,9 @@ private:
 
 class MetaBackend final : public PolicyBackend {
 public:
-    // 짐을 싣게 되면 여기가 설정으로 나가야 한다 (스케일은 계약의 transform 이 갖는다).
-    static constexpr float kPayloadKg = 0.f;
-
-    bool load(const std::string& path) {
+    // 스케일은 계약의 transform 이 갖고 있으므로 여기는 kg 그대로다.
+    bool load(const std::string& path, float payloadKg) {
+        m_payloadKg = payloadKg;
         m_rt = std::make_unique<PolicyRuntime>(path);
 
         const double ticks = m_rt->policyDt() / (kLoopUs * 1e-6);
@@ -554,8 +555,8 @@ public:
             FILE_LOG_AS(logINFO, "RLWALK")
                 << "metadata sources: " << terms
                 << " | kp[0]=" << m_rt->gains().kp[0] << " kd[0]=" << m_rt->gains().kd[0]
-                << (m_rt->sources().count("payload") ? " | payload " : " | payload -")
-                << (m_rt->sources().count("payload") ? std::to_string(kPayloadKg) + " kg" : "");
+                << (m_rt->sources().count("payload")
+                        ? " | payload " + std::to_string(m_payloadKg) + " kg" : " | payload 항 없음");
         }
         return true;
     }
@@ -584,7 +585,7 @@ public:
                 for (int i = 0; i < 3; ++i) v[i] = static_cast<float>(grav[i]);
             else if (name == "command")
                 for (int i = 0; i < 3; ++i) v[i] = cmd[i];
-            else if (name == "payload") v[0] = kPayloadKg;
+            else if (name == "payload") v[0] = m_payloadKg;
             else if (name == "joint_position_rel")
                 for (int i = 0; i < 12; ++i)
                     v[i] = static_cast<float>(snap.pos[m_motor[i]]) - m_defaultPos[i];
@@ -609,6 +610,7 @@ private:
 
     std::unique_ptr<PolicyRuntime> m_rt;
     std::string m_desc;
+    float m_payloadKg  = 0.f;
     int   m_decimation = 1;
     int   m_motor[12]  = {};
     float m_defaultPos[12] = {};
@@ -616,7 +618,7 @@ private:
 
 }  // namespace
 
-std::unique_ptr<PolicyBackend> PolicyBackend::create(const std::string& path) {
+std::unique_ptr<PolicyBackend> PolicyBackend::create(const std::string& path, float payloadKg) {
     namespace fs = std::filesystem;
     std::error_code ec;
 
@@ -643,11 +645,11 @@ std::unique_ptr<PolicyBackend> PolicyBackend::create(const std::string& path) {
         // 계약이 있는데 깨졌다면 폴백이 아니라 에러다.
         if (PolicyRuntime::hasMetadata(model)) {
             auto backend = std::make_unique<MetaBackend>();
-            if (!backend->load(model)) return nullptr;
+            if (!backend->load(model, payloadKg)) return nullptr;
             return backend;
         }
         auto backend = std::make_unique<DreamBackend>();
-        if (!backend->load(model)) return nullptr;
+        if (!backend->load(model, payloadKg)) return nullptr;
         return backend;
     } catch (const Ort::Exception& e) {
         FILE_LOG_AS(logERROR, "RLWALK") << "ONNX load failed: " << e.what();

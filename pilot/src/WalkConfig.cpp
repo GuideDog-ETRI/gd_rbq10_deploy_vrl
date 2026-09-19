@@ -1,6 +1,7 @@
 #include "WalkConfig.hpp"
 
 #include <cctype>
+#include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -95,6 +96,21 @@ WalkConfig WalkConfig::load() {
         cfg.m_mode = Mode::Ours;
     }
 
+    // 짐은 모델 상수가 아니라 지금 로봇에 실린 것이다 — 정책을 안 바꾸고 이 값만 바뀐다.
+    {
+        const std::string raw = value("RBQ_PAYLOAD_KG", "0");
+        try {
+            cfg.m_payloadKg = std::stof(raw);
+        } catch (const std::exception&) {
+            FILE_LOG_AS(logERROR, "WALK") << "RBQ_PAYLOAD_KG \"" << raw << "\" 를 읽을 수 없다 — 0 kg";
+            cfg.m_payloadKg = 0.f;
+        }
+        if (!std::isfinite(cfg.m_payloadKg) || cfg.m_payloadKg < 0.f || cfg.m_payloadKg > 20.f) {
+            FILE_LOG_AS(logERROR, "WALK") << "RBQ_PAYLOAD_KG " << cfg.m_payloadKg << " 가 범위 밖 [0,20] — 0 kg";
+            cfg.m_payloadKg = 0.f;
+        }
+    }
+
     if (cfg.m_mode == Mode::Vendor) {
         FILE_LOG_AS(logWARNING, "WALK")
             << "mode=vendor — WALK uses QuadWalk rl_trot. Pilot claims no joints.";
@@ -133,6 +149,7 @@ WalkConfig WalkConfig::load() {
     FILE_LOG_AS(logINFO, "WALK")
         << "mode=" << cfg.modeName()
         << " policy=" << (cfg.m_policyPath.empty() ? "<거부됨 — 벤더 폴백>" : cfg.m_policyPath)
+        << " payload=" << cfg.m_payloadKg << "kg"
         << (haveConf ? "" : " (walk.env 없음, 기본값)");
     return cfg;
 }

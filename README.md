@@ -127,7 +127,12 @@ QuadWalk 에 맡긴다. 바꾸면 재시작이 필요하다 (정책은 기동 �
 RBQ_WALK=ours                                # ours | sdk | vendor
 RBQ_POLICY_OURS=d_v3.6.21_b1_18              # 고른 모드의 줄만 쓰인다 —
 RBQ_POLICY_SDK=rbq10                         # RBQ_WALK 한 줄로 A/B 가 된다
+RBQ_PAYLOAD_KG=6                             # 지금 실린 짐. payload 항이 있는 정책만 쓴다
 ```
+
+`RBQ_PAYLOAD_KG` 는 모델 상수가 아니라 운용 값이다 — 짐이 바뀌면 정책을 그대로 두고
+이 줄만 바꾼다. 학습 스케일이 {0,5} kg → {0,1} 이라 5 를 넘으면 학습 범위 밖 obs 로
+들어가고, 기동 로그에 경고가 남는다.
 
 | `RBQ_WALK` | 무엇이 걷는가 | 정책 경로 | 규격을 아는 곳 | 추론 |
 |---|---|---|---|---|

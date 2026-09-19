@@ -80,9 +80,9 @@ const char* RlWalker::phaseName(Phase p) {
     return "?";
 }
 
-bool RlWalker::init(const std::string& policyPath) {
+bool RlWalker::init(const std::string& policyPath, float payloadKg) {
     try {
-        m_policy = PolicyBackend::create(policyPath);
+        m_policy = PolicyBackend::create(policyPath, payloadKg);
         if (!m_policy) return false;
 
         // 백엔드가 정하는 값은 여기서 한 번만 받는다.
