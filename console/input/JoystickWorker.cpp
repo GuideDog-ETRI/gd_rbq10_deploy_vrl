@@ -127,6 +127,29 @@ void JoystickWorker::onReadable()
         emit emergencyStopRequested();
     }
     m_estopComboHeld = combo;
+
+    // 버튼 단독 → FSM 명령. 화면 버튼을 마우스로 누르는 것과 같은 경로다.
+    //
+    // A 를 누르고 있으면 전부 무시한다: ↓+A 는 위의 E-STOP 콤보라서, 그대로 두면
+    // E-STOP 을 치려는 순간 SIT 이 먼저 나간다. A 를 보는 조건 하나로 두 기능이
+    // 같은 키를 나눠 쓴다.
+    const bool gate = !s.buttonA;
+    auto edge = [&](bool now, bool& held, int command, const char* label) {
+        if (now && gate && !held)
+        {
+            FILE_LOG(logINFO) << "[PAD] " << label;
+            emit fsmCommandRequested(command);
+        }
+        held = now && gate;
+    };
+    edge(s.buttonUp,   m_dpadUpHeld,   CMD_CTRL_STAND, "STAND (D-Pad Up)");
+    edge(s.buttonDown, m_dpadDownHeld, CMD_CTRL_READY, "SIT (D-Pad Down)");
+    edge(s.buttonLeft, m_dpadLeftHeld, CMD_CTRL_WALK,  "WALK (D-Pad Left)");
+    // D-Pad 바로 위의 버튼 = DualSense Create/Share(raw 8) = 매핑상 Back.
+    // 실기에서 눌러 raw 번호를 확인하고 골랐다 (Xbox 계열에서도 같은 자리의
+    // Back/View 가 [6] 으로 들어온다). ROBOT START 는 걷기 전에 한 번 누르는
+    // 무장 명령이라 D-Pad 자세 전환과 한 손에 모아둔다.
+    edge(s.buttonBack, m_startHeld,    CMD_CTRL_START, "ROBOT START (Back)");
 }
 
 void JoystickWorker::onDiag()
