@@ -1,5 +1,6 @@
 #include "PolicyBackend.hpp"
 
+#include "PolicyBackendVrl.hpp"  // DreamVrl — vision-RL 3-input 확장, 이 파일과 완전히 분리된 새 파일
 #include "PolicyRuntime.hpp"
 
 #include <QJsonArray>
@@ -648,6 +649,25 @@ std::unique_ptr<PolicyBackend> PolicyBackend::create(const std::string& path, fl
             if (!backend->load(model, payloadKg)) return nullptr;
             return backend;
         }
+        // 계약이 없는 .onnx 안에서 Dream(2-input, blind)과 DreamVrl(3-input,
+        // vision-RL -- gd_lab_vrl 의 export_vrl.py 계약)을 가른다. "파일이 곧
+        // 계약"이라는 위쪽 분기와 같은 정신을, 메타데이터가 없을 때 ONNX 입력
+        // 개수 레벨로 한 단계 더 내린 것뿐이다 -- 그래서 walk.env/WalkConfig 에
+        // 새 모드가 필요 없다. 개수만 보려고 세션을 한 번 더 여는 게 두 배
+        // 로드라 약간 낭비지만, 기동 시 한 번뿐이다.
+        size_t inputCount = 0;
+        {
+            Ort::Env probeEnv(ORT_LOGGING_LEVEL_WARNING, "camel_rlwalk_probe");
+            Ort::SessionOptions probeOpts;
+            Ort::Session probeSession(probeEnv, model.c_str(), probeOpts);
+            inputCount = probeSession.GetInputCount();
+        }
+        if (inputCount == 3) {
+            auto backend = std::make_unique<DreamVrlBackend>();
+            if (!backend->load(model, payloadKg)) return nullptr;
+            return backend;
+        }
+
         auto backend = std::make_unique<DreamBackend>();
         if (!backend->load(model, payloadKg)) return nullptr;
         return backend;

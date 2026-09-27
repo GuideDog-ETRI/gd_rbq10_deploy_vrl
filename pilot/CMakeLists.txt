@@ -18,6 +18,10 @@ add_executable(CAMEL-Pilot
     src/RbqLink.cpp
     src/PolicyBackend.hpp
     src/PolicyBackend.cpp
+    src/PolicyBackendVrl.hpp
+    src/PolicyBackendVrl.cpp
+    src/VisionStudentThread.hpp
+    src/VisionStudentThread.cpp
     src/PolicyRuntime.hpp
     src/PolicyRuntime.cpp
     src/RlWalker.hpp
@@ -36,7 +40,9 @@ target_link_libraries(CAMEL-Pilot PRIVATE
     onnxruntime::onnxruntime
     Qt6::Core
     Qt6::Network
+    ${OpenCV_LIBS}        # VisionStudentThread 의 depth/IR 리사이즈
 )
+target_include_directories(CAMEL-Pilot PRIVATE ${OpenCV_INCLUDE_DIRS})
 
 # configs/cyclonedds.xml 를 찾는 기준. 개발 빌드에서는 리포 루트이고, 배포
 # 빌드에서는 scripts/deploy.sh 가 DEPLOY_PREFIX 를 타깃 경로로 덮어쓴다

@@ -40,6 +40,7 @@ Item {
     required property var robot        // Bridge.robot
     required property var connection   // Bridge.connection
     required property var viewer       // Bridge.viewer
+    required property var joystick     // Bridge.joystick
 
     readonly property bool live: connection.connected
 
@@ -58,5 +59,29 @@ Item {
             { k: qsTr("RPY"),     v: root.live ? root.fmtVec(root.robot.imuRpy) : "—",         warn: false },
             { k: qsTr("CMD VEL"), v: root.live ? root.fmtVec(root.robot.cmdVel) : "—",         warn: false }
         ]
+    }
+
+    // 마우스 가상 조이스틱 — 사이드바의 "VIRTUAL JOY" 토글이 켜져 있을 때만 뜬다
+    // (KeyboardJoy와 같은 virtualEnabled 스위치를 공유한다). 왼쪽 패드가 이동
+    // (lx,ly), 오른쪽 패드가 회전(rx) — KeyboardJoy::updateAxesFromKeys의 축
+    // 배치·부호 규약과 맞춘다(전진/우측/우회전 = 양수). 두 패드 다 놓으면 즉시
+    // 0으로 스냅한다.
+    Row {
+        visible: root.joystick && root.joystick.virtualEnabled
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.margins: 20
+        spacing: 20
+
+        MouseJoyPad {
+            id: movePad
+            label: qsTr("MOVE")
+            onMoved: (x, y) => root.joystick.setVirtualAxes(x, y, rotPad.dragX, 0)
+        }
+        MouseJoyPad {
+            id: rotPad
+            label: qsTr("TURN")
+            onMoved: (x, y) => root.joystick.setVirtualAxes(movePad.dragX, movePad.dragY, x, 0)
+        }
     }
 }

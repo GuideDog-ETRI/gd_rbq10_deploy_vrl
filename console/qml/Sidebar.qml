@@ -126,7 +126,7 @@ Item {
             OptionRow {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 46
-                text: qsTr("KEYBOARD")
+                text: qsTr("VIRTUAL JOY (KB / MOUSE)")
                 on: root.joystick.virtualEnabled
                 enabled: root.connection.connected
                 onClicked: {

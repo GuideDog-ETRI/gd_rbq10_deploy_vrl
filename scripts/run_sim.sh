@@ -134,9 +134,21 @@ exec -a pilot-tab bash
 EOF
 
 # Pilot. DDS discovery 가 동적이라 로봇이 늦게 떠도 알아서 붙는다 — 기다리지 않는다.
+#
+# RBQ_POLICY_FILE 이 이미 설정돼 있으면(호출자가 명시적으로 골랐으면) 그대로
+# 존중한다. 안 정해져 있을 때만 resources/policy/ 아래 가장 최근 수정된 .onnx
+# 를 기본값으로 쓴다 -- walk.env 의 RBQ_POLICY_OURS 고정값이 아니라, 방금 새로
+# export 한 정책이 자동으로 실리게 하기 위함.
 cat > "${TAB_DIR}/pilot.sh" <<EOF
 #!/bin/bash
 cd '${REPO_DIR}'
+if [ -z "\${RBQ_POLICY_FILE:-}" ]; then
+    LATEST_POLICY="\$(ls -t '${REPO_DIR}/resources/policy/'*.onnx 2>/dev/null | head -1)"
+    if [ -n "\$LATEST_POLICY" ]; then
+        export RBQ_POLICY_FILE="\$(basename "\$LATEST_POLICY")"
+        echo "[run_sim] RBQ_POLICY_FILE not set -- defaulting to latest: \${RBQ_POLICY_FILE}"
+    fi
+fi
 '${BUILD_DIR}/pilot/CAMEL-Pilot' --interface lo --sim \\
     --tcp-port ${PILOT_TCP} --beacon-port ${PILOT_BEACON}
 echo; echo '[run_sim] Pilot exited. Tab kept open — Ctrl+D to close.'

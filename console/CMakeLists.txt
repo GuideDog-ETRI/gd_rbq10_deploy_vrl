@@ -103,6 +103,7 @@ qt_add_qml_module(CAMEL-Console
             qml/components/PanelLabel.qml
             qml/components/VelocityTriple.qml
             qml/components/StickGauge.qml
+            qml/components/MouseJoyPad.qml
             qml/components/StateChip.qml
             qml/components/JoyPadButton.qml
             qml/components/OptionRow.qml

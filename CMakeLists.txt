@@ -25,6 +25,11 @@ option(BUILD_TOOLS   "Build policy-check (vendor-contract policy validator)" ON)
 
 find_package(Eigen3 REQUIRED)
 
+# VisionStudentThread(pilot/) 의 depth/IR 전처리와 vision-viewer(tools/) 전용 —
+# 시스템 패키지로 깐다 (libopencv-dev, highgui 포함). rbq_sdk 처럼 벤더링하지
+# 않는 이유는 비전 경로에만 쓰이고 블라인드 배포에는 들어가지 않기 때문.
+find_package(OpenCV REQUIRED COMPONENTS core imgcodecs imgproc highgui)
+
 # -----------------------------------------------------------------------------
 # wire — 전선 계약
 #
