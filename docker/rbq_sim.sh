@@ -23,6 +23,8 @@
 #   bash docker/rbq_sim.sh up             컨테이너 기동 (백그라운드)
 #   bash docker/rbq_sim.sh motion         Motion --sim 실행
 #   bash docker/rbq_sim.sh mujoco         Mujoco 실행 (카메라 포함, --vision 자동)
+#                                         창은 Xephyr(:2 기본) 안에서 뜬다 -- 이 데스크톱의
+#                                         Mutter 합성기에서는 안 그려진다 (mujoco) 케이스 주석 참고)
 #   bash docker/rbq_sim.sh gui            GUI 실행
 #   bash docker/rbq_sim.sh stop [대상]    떠도는 앱/워치독 정리 (motion|mujoco|gui|all)
 #   bash docker/rbq_sim.sh shell          컨테이너 셸
@@ -48,7 +50,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # 지정이 없으면 흔한 자리를 훑는다. bin/ 이 있는 첫 후보가 이긴다 — 사람마다
 # 벤더 배포본을 두는 자리가 달라서, 한 곳을 기본값으로 박으면 남의 기계에서 틀린다.
-RBQ_DIR_CANDIDATES=("$HOME/RBQ" "$HOME/Codes/RBQ" "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/RBQ")
+RBQ_DIR_CANDIDATES=("$HOME/RBQ" "$HOME/Codes/RBQ" "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/RBQ" "$HOME/gd_project/RBQ_vendor/RBQ-nightly")
 if [ -z "${RBQ_DIR:-}" ]; then
     for _c in "${RBQ_DIR_CANDIDATES[@]}"; do
         [ -d "${_c}/bin" ] && RBQ_DIR="${_c}" && break
@@ -57,6 +59,7 @@ if [ -z "${RBQ_DIR:-}" ]; then
 fi
 IMAGE_TAG="${IMAGE_TAG:-rbq-sim:22.04}"
 CONTAINER="${CONTAINER:-rbq-sim}"
+TERRAIN_DIR="${RBQ_SIM_TERRAIN_DIR:-}"
 
 DOCKER="docker"
 if ! command -v docker >/dev/null 2>&1; then
@@ -105,6 +108,17 @@ cmd_up() {
         return
     fi
 
+    TERRAIN_MOUNTS=()
+    if [ -n "${TERRAIN_DIR}" ]; then
+        if [ ! -f "${TERRAIN_DIR}/rbq_environment.xml" ] || [ ! -f "${TERRAIN_DIR}/environment.xml" ]; then
+            echo "ERROR: RBQ_SIM_TERRAIN_DIR must contain rbq_environment.xml and environment.xml." >&2
+            exit 1
+        fi
+        TERRAIN_MOUNTS=(-v "${TERRAIN_DIR}/rbq_environment.xml:/workspace/RBQ/resources/model/rbq_environment.xml:ro"
+                        -v "${TERRAIN_DIR}:/workspace/RBQ/resources/model/env/vrl_progression:ro")
+        echo "[info] terrain overlay: ${TERRAIN_DIR}"
+    fi
+
     # NVIDIA dGPU 사용. 없으면 Intel iGPU(/dev/dri)로 떨어지는데, 22.04 Mesa가
     # Arrow Lake를 모르면 llvmpipe 소프트웨어 렌더링이 되어 Mujoco가 끊긴다.
     GPU_ARGS=()
@@ -146,6 +160,7 @@ cmd_up() {
         -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
         --device /dev/dri \
         -v "${RBQ_DIR}:/workspace/RBQ:rw" \
+        "${TERRAIN_MOUNTS[@]}" \
         -w /workspace/RBQ \
         "${IMAGE_TAG}" sleep infinity
 }
@@ -267,6 +282,11 @@ cmd_stop() {
         " || true
         echo "[rbq_sim] ${a} 정리"
     done
+    # Mujoco's dedicated Xephyr display (see the "mujoco)" case, 2026-09-10 note)
+    # is a host process, not a container one -- clean it up here too.
+    if [[ " ${apps[*]} " == *" Mujoco "* ]]; then
+        pkill -f "^Xephyr ${MUJOCO_XDISPLAY:-:2} " 2>/dev/null || true
+    fi
 }
 
 # DDS 인터페이스 결정. 기본은 lo — 시뮬은 한 대에서 전부 돌리는 게 기본 구성이다.
@@ -305,9 +325,86 @@ case "${1:-}" in
     # Without it Mujoco comes up fine but not one vision topic appears, and the
     # elevation map just sits empty with nothing in the logs to say why. It is
     # on by default for that reason; RBQ_SIM_VISION=0 skips the extra GPU work.
+    #
+    # 2026-09-10: Mujoco's window never presents new frames on this desktop's
+    # GNOME/Mutter compositor -- confirmed with gdb that the render thread keeps
+    # making real NVIDIA GL calls (not hung) and the window is properly mapped,
+    # but the compositor shows stale content indefinitely (survives reboot,
+    # container recreation, PRIME GPU mode switch, disabling Mutter's
+    # experimental x11-randr-fractional-scaling). glxgears on the same
+    # DISPLAY/container renders fine, so it's specific to how this Mujoco
+    # binary's GL window interacts with Mutter, not the GPU/driver/container
+    # setup. A nested, non-compositing X server (Xephyr) sidesteps it
+    # entirely -- confirmed working. So Mujoco alone gets routed to its own
+    # Xephyr display; Motion/Pilot/Console are unaffected and stay on the
+    # real DISPLAY.
+    #
+    # Mujoco always opens its own window at exactly 2/3 of whatever resolution
+    # Xephyr reports at Xephyr's *launch* time -- it ignores Xephyr's screen
+    # size afterwards and does not react to resize events (measured: resizing
+    # the Xephyr window live, by hand or via XResizeWindow, never changes
+    # Mujoco's own window size once it has opened). So: MUJOCO_XSCREEN sets the
+    # Xephyr launch resolution (default below renders Mujoco at ~1840x936);
+    # after Mujoco's window appears, its outer Xephyr window is shrunk to match
+    # it exactly via docker/tools/resize_win, removing the leftover 1/3 border
+    # (a plain XResizeWindow does not trigger Xephyr's resize-and-renegotiate
+    # RandR path, so this does not change what Mujoco already rendered at).
     mujoco) VISION_ARG="--vision"
             [ "${RBQ_SIM_VISION:-1}" = "0" ] && VISION_ARG=""
-            cmd_exec_app Mujoco "cd bin && exec sudo ./Mujoco --interface ${IFACE} ${VISION_ARG} ${*:2}" ;;
+            MUJOCO_XDISPLAY="${MUJOCO_XDISPLAY:-:2}"
+            # 3774x1439: empirically the max on this desktop (3840x2160 real
+            # screen). Mutter clamps Xephyr's own window to fit the real desktop
+            # (measured ceiling here: 3774 wide). Separately, Mujoco's sizing
+            # breaks (locks to a fixed 2560x1440 window at a wrong position)
+            # whenever Xephyr's height is >= 1440 -- confirmed by bisection
+            # (1439 clean, 1440/1460/1500/1600/1920 all broken) -- so height must
+            # stay under that regardless of how much desktop space is free.
+            # Mujoco always renders at exactly 2/3 of this, so it ends up at
+            # 2516x959 -- noticeably wider than the previous 1840x936, not the
+            # same aspect ratio (user chose size over preserving the old ratio,
+            # 2026-09-10).
+            MUJOCO_XSCREEN="${MUJOCO_XSCREEN:-3774x1439}"
+            if command -v Xephyr >/dev/null 2>&1; then
+                if ! xdpyinfo -display "${MUJOCO_XDISPLAY}" >/dev/null 2>&1; then
+                    echo "[rbq_sim] starting Xephyr on ${MUJOCO_XDISPLAY} (Mujoco's window goes here, not ${DISPLAY})"
+                    Xephyr "${MUJOCO_XDISPLAY}" -screen "${MUJOCO_XSCREEN}" -resizeable >/dev/null 2>&1 &
+                    for _i in $(seq 1 20); do
+                        xdpyinfo -display "${MUJOCO_XDISPLAY}" >/dev/null 2>&1 && break
+                        sleep 0.5
+                    done
+                fi
+
+                RESIZE_BIN="${SCRIPT_DIR}/tools/resize_win"
+                [ -x "${RESIZE_BIN}" ] || gcc -o "${RESIZE_BIN}" "${SCRIPT_DIR}/tools/resize_win.c" -lX11 2>/dev/null || true
+                if [ -x "${RESIZE_BIN}" ]; then
+                    (
+                        # Wait for Mujoco's window on the Xephyr display, read its
+                        # real size, find Xephyr's own (outer, real-DISPLAY) window
+                        # by title, shrink it to match. Backgrounded: cmd_exec_app
+                        # below blocks in the foreground for as long as Mujoco runs.
+                        mujoco_geom=""
+                        for _i in $(seq 1 40); do
+                            mujoco_geom="$(DISPLAY="${MUJOCO_XDISPLAY}" xwininfo -root -tree 2>/dev/null \
+                                | sed -n 's/.*"MuJoCo : rbq environment".*[[:space:]]\([0-9]\+\)x\([0-9]\+\)+0+0.*/\1 \2/p' | head -1)"
+                            [ -n "${mujoco_geom}" ] && break
+                            sleep 0.5
+                        done
+                        [ -n "${mujoco_geom}" ] || exit 0
+                        read -r _w _h <<< "${mujoco_geom}"
+                        xephyr_win="$(DISPLAY="${DISPLAY}" xwininfo -root -tree 2>/dev/null \
+                            | grep -F "(\"Xephyr\" \"Xephyr\")" | grep -oE '0x[0-9a-f]+' | head -1)"
+                        [ -n "${xephyr_win}" ] || exit 0
+                        "${RESIZE_BIN}" "${DISPLAY}" "${xephyr_win}" "${_w}" "${_h}"
+                        echo "[rbq_sim] fit Xephyr window to Mujoco's ${_w}x${_h} (no border)"
+                    ) &
+                fi
+
+                DISPLAY="${MUJOCO_XDISPLAY}" cmd_exec_app Mujoco \
+                    "cd bin && exec sudo ./Mujoco --interface ${IFACE} ${VISION_ARG} ${*:2}"
+            else
+                echo "[rbq_sim] Xephyr not found (apt install xserver-xephyr) -- launching on ${DISPLAY} directly, window may not render on this desktop"
+                cmd_exec_app Mujoco "cd bin && exec sudo ./Mujoco --interface ${IFACE} ${VISION_ARG} ${*:2}"
+            fi ;;
     gui)    cmd_exec_app GUI "cd bin && exec ./GUI --sim ${*:2}" ;;
     stop)   cmd_stop "${2:-all}" ;;
     shell)  cmd_exec "bash" ;;

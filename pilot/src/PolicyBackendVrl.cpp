@@ -1,0 +1,285 @@
+#include "PolicyBackendVrl.hpp"
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstring>
+#include <filesystem>
+#include <vector>
+
+#include <Eigen/Dense>
+#include <onnxruntime_cxx_api.h>
+
+#include <common/Log.hpp>
+
+#include "VisionStudentThread.hpp"
+
+namespace {
+
+bool featureShapeMatches(const std::vector<int64_t>& shape, int expected) {
+    return shape.size() == 2 && (shape.back() < 0 || shape.back() == expected);
+}
+
+// PolicyBackend.cpp의 DreamBackend와 동일한 헬퍼/상수 (그 파일 자체 주석 참고:
+// "2026-08-17 실기 검증된 경로라 수식과 상수를 손대지 않았다"). proprio 쪽
+// 계약(관절 순서, 스케일, 기립자세)은 vision-RL 이라고 달라질 이유가 없어서
+// (terrain_latent 는 *추가* 입력이지 기존 45-dim step을 바꾸는 게 아니다)
+// 그대로 복제했다 -- DreamBackend를 고치거나 공유 헤더로 뽑는 대신, 이
+// 파일이 독립적으로 서 있게 둔다.
+Eigen::Vector3d projectedGravity(const RbqLink::Snapshot& snap) {
+    const Eigen::Quaterniond q(snap.quat[0], snap.quat[1], snap.quat[2], snap.quat[3]);
+    return q.toRotationMatrix().transpose() * Eigen::Vector3d(0, 0, -1);
+}
+
+constexpr float kDreamKp[3] = {123.39f, 123.39f, 127.77f};
+constexpr float kDreamKd[3] = {2.5f, 2.5f, 2.5f};
+constexpr float kOffsetOnnx[12] = {0.0f, 0.0f, 0.0f, 0.0f,
+                                   0.76f, 0.76f, 0.76f, 0.76f,
+                                   -1.45f, -1.45f, -1.45f, -1.45f};
+constexpr float kActionScale = 0.25f;
+constexpr float kActionClamp = 5.0f;
+constexpr float kVelScale    = 0.05f;
+constexpr float kAngScale    = 0.25f;
+constexpr float kCmdScale[3] = {2.0f, 2.0f, 0.25f};
+
+void motorToOnnx(const float in[12], float out[12]) {
+    out[0] = in[9];  out[1] = in[6];  out[2]  = in[3];  out[3]  = in[0];
+    out[4] = in[10]; out[5] = in[7];  out[6]  = in[4];  out[7]  = in[1];
+    out[8] = in[11]; out[9] = in[8];  out[10] = in[5];  out[11] = in[2];
+}
+
+void onnxToMotor(const float in[12], float out[12]) {
+    out[9]  = in[0]; out[6] = in[1]; out[3]  = in[2];  out[0]  = in[3];
+    out[10] = in[4]; out[7] = in[5]; out[4]  = in[6];  out[1]  = in[7];
+    out[11] = in[8]; out[8] = in[9]; out[5]  = in[10]; out[2]  = in[11];
+}
+
+}  // namespace
+
+struct DreamVrlBackend::Impl {
+    static constexpr int kH          = 5;
+    static constexpr int kStepDim    = 45;
+    static constexpr int kDecimation = 10;  // Dream과 동일(50Hz) -- proprio 학습 decimation은 안 바뀜
+    static constexpr int kLatentDim  = VisionStudentThread::kLatentDim;
+
+    std::unique_ptr<Ort::Env>     env;
+    std::unique_ptr<Ort::Session> session;
+    std::vector<float> directObs;
+    std::vector<float> cenetObs;
+    bool  hasPayloadObs = false;   // 45 = legacy, 46 = payload 조건화 (블라인드 DreamBackend 와 같은 규약)
+    float payloadKg = 0.f;
+    float payloadObs = 0.f;
+    std::array<float, 12> prevAction{};
+    std::array<std::array<float, kStepDim>, kH> hist{};
+    int histIdx = 0, histCount = 0;
+
+    std::unique_ptr<VisionStudentThread> student;
+    std::string desc;
+
+    bool load(const std::string& actorOnnxPath, float payloadKgIn) {
+        payloadKg = payloadKgIn;
+        env = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "camel_rlwalk_vrl");
+        Ort::SessionOptions opts;
+        opts.SetIntraOpNumThreads(1);
+        opts.SetGraphOptimizationLevel(ORT_ENABLE_EXTENDED);
+        session = std::make_unique<Ort::Session>(*env, actorOnnxPath.c_str(), opts);
+
+        if (session->GetInputCount() != 3 || session->GetOutputCount() != 2) {
+            FILE_LOG_AS(logERROR, "RLWALK")
+                << "vision-RL actor ONNX must be 3-input/2-output (direct_obs, cenet_obs, "
+                << "terrain_latent -> actions, z_t), got " << session->GetInputCount() << "/"
+                << session->GetOutputCount() << " (" << actorOnnxPath << ")";
+            return false;
+        }
+
+        // direct 입력의 특징 차원으로 obs 레이아웃을 감지한다 -- DreamBackend 와
+        // 같은 규약: 45 = legacy, 46 = step 말미에 payload 스칼라.
+        {
+            const auto shape = session->GetInputTypeInfo(0).GetTensorTypeAndShapeInfo().GetShape();
+            const int64_t feat = shape.empty() ? -1 : shape.back();
+            if (feat == kStepDim + 1)      hasPayloadObs = true;
+            else if (feat != kStepDim) {
+                FILE_LOG_AS(logERROR, "RLWALK")
+                    << "vision-RL direct_obs dim matches neither " << kStepDim << " nor "
+                    << (kStepDim + 1) << " (" << actorOnnxPath << ")";
+                return false;
+            }
+        }
+        payloadObs = payloadKg * 0.2f;
+        const int step = hasPayloadObs ? kStepDim + 1 : kStepDim;
+        const auto cenetShape = session->GetInputTypeInfo(1).GetTensorTypeAndShapeInfo().GetShape();
+        const auto latentShape = session->GetInputTypeInfo(2).GetTensorTypeAndShapeInfo().GetShape();
+        const auto actionShape = session->GetOutputTypeInfo(0).GetTensorTypeAndShapeInfo().GetShape();
+        const auto zShape = session->GetOutputTypeInfo(1).GetTensorTypeAndShapeInfo().GetShape();
+        if (!featureShapeMatches(cenetShape, Impl::kH * step) ||
+            !featureShapeMatches(latentShape, kLatentDim) ||
+            !featureShapeMatches(actionShape, 12) || !featureShapeMatches(zShape, 19)) {
+            FILE_LOG_AS(logERROR, "RLWALK")
+                << "vision-RL actor tensor shape mismatch; expected cenet_obs[1," << (Impl::kH * step)
+                << "], terrain_latent[1," << kLatentDim << "], actions[1,12], z_t[1,19] ("
+                << actorOnnxPath << ")";
+            return false;
+        }
+        directObs.assign(step, 0.f);
+        cenetObs.assign(kH * step, 0.f);
+
+        // 학생 모델 위치 = actor onnx 옆의 <stem>_student.onnx (export_student_vrl.py
+        // 의 sibling-file 관례). 새 설정 없음 -- 이 저장소 전체가 "파일 위치가
+        // 곧 계약" 이라는 원칙을 따르므로(WalkConfig.hpp 참고) 그대로 이어간다.
+        namespace fs = std::filesystem;
+        const fs::path p(actorOnnxPath);
+        const fs::path studentPath = p.parent_path() / (p.stem().string() + "_student" + p.extension().string());
+        if (!fs::exists(studentPath)) {
+            FILE_LOG_AS(logERROR, "RLWALK")
+                << "vision-RL student model not found next to actor: " << studentPath.string()
+                << " (run scripts/export_student_vrl.py first)";
+            return false;
+        }
+        // 학습 때의 카메라 update_period(0.08s)와 동일한 80ms --
+        // tasks/vrl_rough.py VisionRoughEnvCfg.__post_init__의
+        // 4*policy_dt(=4*0.02s) 참고. 어긋나면 student가 학습 때와 다른
+        // 빈도로 굴러서, GRU가 훈련 때 못 본 시간 스케일을 보게 된다.
+        student = std::make_unique<VisionStudentThread>(studentPath.string(), 80);
+        if (!student->ok()) {
+            FILE_LOG_AS(logERROR, "RLWALK") << "vision student thread failed to start";
+            return false;
+        }
+
+        desc = actorOnnxPath + (hasPayloadObs ? " (DreamVrl, 3-input 46/230/" : " (DreamVrl, 3-input 45/225/") + std::to_string(kLatentDim) +
+               ", student=" + studentPath.string() + ")";
+        FILE_LOG_AS(logSUCCESS, "RLWALK") << "policy loaded: " << desc;
+        return true;
+    }
+
+    void buildStep(const RbqLink::Snapshot& snap, const float cmd[3], float step[kStepDim]) {
+        float rawPos[12], rawVel[12], pos[12], vel[12];
+        for (int i = 0; i < 12; ++i) {
+            rawPos[i] = static_cast<float>(snap.pos[i]);
+            rawVel[i] = static_cast<float>(kVelScale * snap.vel[i]);
+        }
+        motorToOnnx(rawPos, pos);
+        motorToOnnx(rawVel, vel);
+        for (int i = 0; i < 12; ++i) pos[i] -= kOffsetOnnx[i];
+
+        const Eigen::Vector3d grav = projectedGravity(snap);
+
+        int off = 0;
+        step[off++] = kAngScale * static_cast<float>(snap.gyro[0]);
+        step[off++] = kAngScale * static_cast<float>(snap.gyro[1]);
+        step[off++] = kAngScale * static_cast<float>(snap.gyro[2]);
+        step[off++] = static_cast<float>(grav.x());
+        step[off++] = static_cast<float>(grav.y());
+        step[off++] = static_cast<float>(grav.z());
+        step[off++] = kCmdScale[0] * cmd[0];
+        step[off++] = kCmdScale[1] * cmd[1];
+        step[off++] = kCmdScale[2] * cmd[2];
+        std::memcpy(step + off, pos, sizeof pos);                 off += 12;
+        std::memcpy(step + off, vel, sizeof vel);                 off += 12;
+        std::memcpy(step + off, prevAction.data(), 12 * sizeof(float));
+    }
+
+    void pushHistory(const float step[kStepDim]) {
+        int slot;
+        if (histCount < kH) {
+            slot = histCount++;
+        } else {
+            slot = histIdx;
+            histIdx = (histIdx + 1) % kH;
+        }
+        std::memcpy(hist[slot].data(), step, sizeof(float) * kStepDim);
+    }
+
+    void buildObsInputs() {
+        // 스텝 폭은 payload 유무로 갈린다 (45 또는 46) -- DreamBackend::buildObsInputs
+        // 와 같은 구조다. payload 스칼라는 매 스텝 말미에 실린다.
+        const int outStep = hasPayloadObs ? kStepDim + 1 : kStepDim;
+        float* out = cenetObs.data();
+        auto writeStep = [&](const float* src) {
+            std::memcpy(out, src, sizeof(float) * kStepDim);
+            if (hasPayloadObs) out[kStepDim] = payloadObs;
+            out += outStep;
+        };
+
+        if (histCount < kH) {
+            const int pad = kH - histCount;
+            std::memset(out, 0, sizeof(float) * pad * outStep);
+            out += pad * outStep;
+            for (int i = 0; i < histCount; ++i) writeStep(hist[i].data());
+        } else {
+            for (int i = 0; i < kH; ++i) writeStep(hist[(histIdx + i) % kH].data());
+        }
+        const int newest = (histCount < kH) ? std::max(histCount - 1, 0) : (histIdx - 1 + kH) % kH;
+        std::memcpy(directObs.data(), hist[newest].data(), sizeof(float) * kStepDim);
+        if (hasPayloadObs) directObs[kStepDim] = payloadObs;
+    }
+
+    bool inferAndStageTargets(float targetPos[12]) {
+        float latent[kLatentDim];
+        if (!student->latestLatent(latent)) {
+            // student가 아직 첫 카메라 프레임도 못 받은 초기 구간 -- 0-벡터로
+            // 시작한다 (gd_lab의 student.init_hidden() 직후 latent=0 초기값과
+            // 같은 취급; teacher의 terrain_encoder도 학습 초반엔 이 근방에서
+            // 시작하므로 액션이 갑자기 튀지는 않는다).
+            std::fill(latent, latent + kLatentDim, 0.f);
+        }
+
+        Ort::MemoryInfo mem = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+        std::array<int64_t, 2> directShp{1, static_cast<int64_t>(directObs.size())};
+        std::array<int64_t, 2> cenetShp{1, static_cast<int64_t>(cenetObs.size())};
+        std::array<int64_t, 2> latentShp{1, kLatentDim};
+        std::array<Ort::Value, 3> inputs{
+            Ort::Value::CreateTensor<float>(mem, directObs.data(), directObs.size(), directShp.data(),
+                                            directShp.size()),
+            Ort::Value::CreateTensor<float>(mem, cenetObs.data(), cenetObs.size(), cenetShp.data(),
+                                            cenetShp.size()),
+            Ort::Value::CreateTensor<float>(mem, latent, kLatentDim, latentShp.data(), latentShp.size())};
+
+        static const char* inNames[]  = {"direct_obs", "cenet_obs", "terrain_latent"};
+        static const char* outNames[] = {"actions", "z_t"};
+        auto outs = session->Run(Ort::RunOptions{nullptr}, inNames, inputs.data(), 3, outNames, 2);
+        const float* act = outs[0].GetTensorMutableData<float>();
+
+        float targetOnnx[12];
+        for (int i = 0; i < 12; ++i) {
+            if (!std::isfinite(act[i])) return false;  // 정책 발산 -- 호출자가 Damp
+            const float a = std::clamp(act[i], -kActionClamp, kActionClamp);
+            prevAction[i] = a;
+            targetOnnx[i] = a * kActionScale + kOffsetOnnx[i];
+        }
+        onnxToMotor(targetOnnx, targetPos);
+        return true;
+    }
+};
+
+DreamVrlBackend::DreamVrlBackend() : m_impl(std::make_unique<Impl>()) {}
+DreamVrlBackend::~DreamVrlBackend() = default;
+
+bool DreamVrlBackend::load(const std::string& actorOnnxPath, float payloadKg) {
+    return m_impl->load(actorOnnxPath, payloadKg);
+}
+
+int DreamVrlBackend::decimation() const { return Impl::kDecimation; }
+
+void DreamVrlBackend::gains(float kp[12], float kd[12]) const {
+    for (int i = 0; i < 12; ++i) {
+        kp[i] = kDreamKp[i % 3];
+        kd[i] = kDreamKd[i % 3];
+    }
+}
+
+void DreamVrlBackend::reset(const RbqLink::Snapshot&) {
+    for (auto& s : m_impl->hist) s.fill(0.f);
+    m_impl->histIdx = m_impl->histCount = 0;
+    m_impl->prevAction.fill(0.f);
+    m_impl->student->resetHidden();
+}
+
+bool DreamVrlBackend::infer(const RbqLink::Snapshot& snap, const float cmd[3], float targetPos[12]) {
+    float step[Impl::kStepDim];
+    m_impl->buildStep(snap, cmd, step);
+    m_impl->pushHistory(step);
+    m_impl->buildObsInputs();
+    return m_impl->inferAndStageTargets(targetPos);
+}
+
+std::string DreamVrlBackend::describe() const { return m_impl->desc; }

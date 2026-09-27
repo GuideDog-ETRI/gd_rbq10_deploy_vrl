@@ -12,15 +12,50 @@
 
 find_package(Qt6 REQUIRED COMPONENTS Core)   # PolicyRuntime 의 QJson
 
+# PolicyBackend.cpp 가 PolicyBackendVrl.hpp 를 포함해 DreamVrlBackend 를 참조하므로
+# (vision-RL 3-input 판별 분기), PolicyBackend.cpp 를 소스로 직접 링크하는 타깃은
+# 전부 그 구현(+ VisionStudentThread, OpenCV)도 같이 링크해야 한다 -- 안 그러면
+# DreamVrlBackend 심볼이 undefined reference 로 링크가 깨진다.
 add_executable(policy-check
     src/policy_check.cpp
     ${CMAKE_SOURCE_DIR}/pilot/src/PolicyBackend.cpp
     ${CMAKE_SOURCE_DIR}/pilot/src/PolicyRuntime.cpp
+    ${CMAKE_SOURCE_DIR}/pilot/src/PolicyBackendVrl.cpp
+    ${CMAKE_SOURCE_DIR}/pilot/src/VisionStudentThread.cpp
 )
-target_include_directories(policy-check PRIVATE ${CMAKE_SOURCE_DIR}/pilot/src)
+target_include_directories(policy-check PRIVATE ${CMAKE_SOURCE_DIR}/pilot/src ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(policy-check PRIVATE
     wire                  # include/common — Log.hpp, Constants.hpp
     rbq_sdk::rbq_sdk
     onnxruntime::onnxruntime
     Qt6::Core            # PolicyRuntime 이 QJson 으로 camel.policy.v1 을 읽는다
+    ${OpenCV_LIBS}
 )
+
+# policy-smoke — plain .onnx 정책(Dream/DreamVrl)을 실제로 로드해서 정지 자세
+# 추론을 돌려보는 최소 스모크 테스트. DreamVrl(3-input) 경로까지 같이 검사한다.
+add_executable(policy-smoke
+    src/policy_smoke.cpp
+    ${CMAKE_SOURCE_DIR}/pilot/src/PolicyBackend.cpp
+    ${CMAKE_SOURCE_DIR}/pilot/src/PolicyRuntime.cpp
+    ${CMAKE_SOURCE_DIR}/pilot/src/PolicyBackendVrl.cpp
+    ${CMAKE_SOURCE_DIR}/pilot/src/VisionStudentThread.cpp
+)
+target_include_directories(policy-smoke PRIVATE ${CMAKE_SOURCE_DIR}/pilot/src ${OpenCV_INCLUDE_DIRS})
+target_link_libraries(policy-smoke PRIVATE
+    wire
+    rbq_sdk::rbq_sdk
+    onnxruntime::onnxruntime
+    Qt6::Core
+    ${OpenCV_LIBS}
+)
+
+# vision-snapshot — Mujoco 시뮬 카메라(BT0-3/FT0/RR0)의 DDS 토픽에서 프레임 한 장을
+# 받아 파일로 저장하는 최소 진단 도구. "데이터가 실제로 흐르는지"만 빠르게 본다.
+add_executable(vision-snapshot src/vision_snapshot.cpp)
+target_link_libraries(vision-snapshot PRIVATE rbq_sdk::rbq_sdk)
+
+# vision-viewer — 같은 토픽을 계속 구독하며 BT0-3 depth 를 2x2 로 타일링해 띄운다.
+add_executable(vision-viewer src/vision_viewer.cpp)
+target_link_libraries(vision-viewer PRIVATE rbq_sdk::rbq_sdk ${OpenCV_LIBS})
+target_include_directories(vision-viewer PRIVATE ${OpenCV_INCLUDE_DIRS})

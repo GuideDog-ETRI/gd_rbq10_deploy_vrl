@@ -61,7 +61,7 @@ ApplicationWindow {
 
     // 각 탭의 실체. 프로퍼티 배선을 여기서 하면 타입이 검사되고, 레지스트리는
     // "무엇이 어떤 순서로 있는가"만 말한다.
-    Component { id: operatePage;  OperateTab  { robot: Bridge.robot; connection: Bridge.connection; viewer: Bridge.viewer } }
+    Component { id: operatePage;  OperateTab  { robot: Bridge.robot; connection: Bridge.connection; viewer: Bridge.viewer; joystick: Bridge.joystick } }
     Component { id: hardwarePage; HardwareTab { robot: Bridge.robot; joints: Bridge.joints; profile: Bridge.profile } }
     Component { id: logPage;      LogTab      { logs: Bridge.logs } }
 
