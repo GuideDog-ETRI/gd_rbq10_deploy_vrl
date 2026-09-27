@@ -1,7 +1,100 @@
-# gd_rbq10_deploy
+# gd_rbq10_deploy_vrl
 
 RBQ10 배포 스택. 보행 궤적과 안전 판정을 Rainbow **QuadWalk** 에 맡기고, 우리는 운용 콘솔과
 그 위임을 담당한다.
+
+## VRL 선생·학생 모델 인계와 MuJoCo 실행 순서
+
+학습은 [gd_lab_vrl](https://github.com/GuideDog-ETRI/gd_lab_vrl)의 Isaac Lab 환경에서 수행한다.
+이 저장소의 배포 브랜치는 `vrl`이다. 순서는 **선생 PPO → 학생 증류 → 학생 보행 평가 →
+ONNX 두 파일 export → 이 저장소로 복사 → 재빌드 → MuJoCo 평가**이다.
+
+| 단계/파일 | 처리 |
+|---|---|
+| 선생 `model_3700.pt` | 고정된 선생으로 사용. 해당 실행의 `params/agent.yaml`, `params/env.yaml`도 보관 |
+| 학생 `perception_N.pt` | 선생의 지형 latent를 카메라로 추정하도록 증류하고 보행 평가로 저장본 선택 |
+| `policy_vrl.onnx` | 같은 선생에서 `scripts/export_vrl.py`로 생성한 actor·CENet |
+| `policy_vrl_student.onnx` | 선택한 학생에서 `scripts/export_student_vrl.py`로 생성한 인코더 |
+
+두 export 스크립트는 **학습 저장소**에 있다. 선생/학생 학습 PT를 Pilot에 직접 로드하지 않는다.
+학생이 학습한 선생과 다른 actor를 조합하면 latent 의미가 달라질 수 있다.
+학습·평가·export 전체 명령은 학습 저장소 README의 Arm4 VRL 절에 있다.
+
+### 1. 학습 PC에서 export
+
+학습 저장소의 Python 환경에서 아래 실제 경로를 지정한다. 이 두 명령은 시뮬레이터를 띄우지 않는다.
+
+```bash
+python scripts/export_vrl.py /teacher-run/model_3700.pt --out exported/arm4_teacher3700
+python scripts/export_student_vrl.py /student-run/perception_20000.pt \
+  --actor-onnx exported/arm4_teacher3700/policy_vrl.onnx
+```
+
+선생 PT를 이동했다면 첫 명령에 `--agent-config /teacher-run/params/agent.yaml`을 지정한다.
+학생 파일은 평가로 선택한 저장본을 사용한다. 20,000회 완료 파일이 항상 최적이라는 의미는 아니다.
+
+### 2. 배포 PC에서 두 ONNX 받기
+
+배포 저장소 루트에서 폴더를 만든다.
+
+```bash
+mkdir -p resources/policy/vrl/arm4_teacher3700
+```
+
+학습 PC에서 대상 사용자·주소·절대 경로를 지정해 전송한다.
+
+```bash
+scp exported/arm4_teacher3700/policy_vrl.onnx \
+    exported/arm4_teacher3700/policy_vrl_student.onnx \
+    user@target-host:/absolute/path/gd_rbq10_deploy_vrl/resources/policy/vrl/arm4_teacher3700/
+```
+
+최종 배치는 다음과 같아야 한다. 학생 파일명은 actor의 stem에 `_student`를 붙인 이름이다.
+
+```text
+resources/policy/vrl/arm4_teacher3700/
+  policy_vrl.onnx
+  policy_vrl_student.onnx
+```
+
+원본 PT/params, 두 저장소 커밋, 카메라 계약, 시간 변동 설정은 인계 자료로 별도 보관한다.
+현재 VRL ONNX에는 완전한 주기·게인·보정 계약이 자동 내장되지 않는다.
+
+### 3. 의존성 설치·빌드·시뮬레이터 준비
+
+아래 의존성 절의 Qt/QML 패키지와 Docker·NVIDIA Container Toolkit, 벤더 RBQ v1.19.47을 준비한다.
+`RBQ_DIR`은 대상 PC에 압축을 푼 벤더 RBQ 디렉터리로 지정한다.
+
+```bash
+export RBQ_DIR=/absolute/path/to/RBQ
+cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j4
+bash docker/rbq_sim.sh build
+bash docker/rbq_sim.sh check
+```
+
+### 4. 새 모델을 명시해서 MuJoCo 실행
+
+```bash
+RBQ_WALK=ours RBQ_POLICY_FILE=vrl/arm4_teacher3700/policy_vrl.onnx \
+  RBQ_SIM_VISION=1 bash scripts/run_sim_vrl.sh
+```
+
+`walk.env` 기본은 `vendor`이므로 `RBQ_WALK=ours`를 명시한다. 환경변수 대신 파일로 고정하려면
+`configs/walk.env`의 `RBQ_WALK=ours`, `RBQ_POLICY_OURS=vrl/arm4_teacher3700/policy_vrl.onnx`를 설정한다.
+Pilot 탭에서 학생 모델 로드, BT0--3 depth/IR 수신, `vision student tick`을 확인한다.
+카메라 영상과 latent 갱신을 확인한 뒤 시뮬레이션 콘솔에서 ROBOT START → STAND → WALK로 진행한다.
+지형별 낙상·gap 통과·속도 추종을 확인하며, 종료는 `bash scripts/run_sim_vrl.sh stop`이다.
+
+### 학습 완료 후 바꿀 것과 검증 범위
+
+- 두 ONNX를 새 모델 폴더에 배치하고 모델 경로와 `RBQ_WALK`를 설정한다.
+- Arm4 호환 C++ 변경을 받은 PC는 재빌드한다. 같은 계약의 새 ONNX로 교체할 때는 Pilot을 재시작한다.
+- 현재 VRL 백엔드는 actor 100 Hz, Arm4 게인, 학생 `[1,4,2,45,80]` 영상·64차원 GRU·32차원 latent 기준이다.
+  다른 Arm/카메라 보정/입출력 규격이면 학습 설정과 백엔드를 함께 맞춰야 한다.
+- 4카메라의 촬영 시점 정렬 및 실제 지연·누락은 대상 PC에서 확인한다.
+- 학습 측 Python 테스트·Isaac 증류/재생 스모크와 배포 C++ 구문 검사는 통과했다.
+  이 모델의 최종 ONNX 추론 비교 및 MuJoCo 보행 평가는 export 후 수행한다.
 
 ```
 console/    CAMEL-Console — 운용 콘솔 (Qt Quick)
@@ -36,7 +129,7 @@ sit/stand·게이트 전환·안전체크는 QuadWalk 에 위임하고, 콘솔 �
 ## 의존성
 
 ```bash
-sudo apt install qt6-base-dev libeigen3-dev                        # Pilot
+sudo apt install build-essential cmake qt6-base-dev libeigen3-dev libopencv-dev gnome-terminal  # Pilot/VRL
 sudo apt install qt6-declarative-dev qt6-quick3d-dev qt6-shadertools-dev   # Console
 sudo apt install qml6-module-qtquick qml6-module-qtquick-controls \
                  qml6-module-qtquick-layouts qml6-module-qtquick-window \
