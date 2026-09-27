@@ -40,6 +40,9 @@ public:
 Q_SIGNALS:
     // 워커 → GUI. D-Pad ↓ + A 동시 입력. 누르는 순간 1회만(엣지).
     void emergencyStopRequested();
+    // 워커 → GUI. 패드 버튼 단독 입력으로 FSM 명령. 화면 버튼과 **같은 경로**로 나간다.
+    // ``command`` 는 CMD_CTRL_* 값이다. 누르는 순간 1회만(엣지).
+    void fsmCommandRequested(int command);
     // 워커 → GUI. 값이 실제로 바뀌었을 때만, 최대 10Hz.
     void padStateChanged(const GamepadState& state);
     void udpReadyChanged(bool ready);
@@ -77,5 +80,9 @@ private:
     LAN_JOYSTICK m_virtualJoy {};
 
     bool m_estopComboHeld = false; // E-STOP 콤보 엣지 검출용
+    bool m_dpadUpHeld = false;     // D-Pad 단독 명령 엣지 검출용
+    bool m_dpadDownHeld = false;
+    bool m_dpadLeftHeld = false;
+    bool m_startHeld = false;      // Back(D-Pad 바로 위) → ROBOT START 엣지 검출용
     GamepadState m_lastEmitted;    // 진단 변경분 비교용
 };

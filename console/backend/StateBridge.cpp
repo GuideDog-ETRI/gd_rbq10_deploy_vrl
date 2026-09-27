@@ -140,6 +140,14 @@ void StateBridge::startJoystick()
         FILE_LOG(logWARNING) << "[CMD] E-STOP (gamepad)";
         m_command->send(CMD_CTRL_E_STOP);
     });
+    // D-Pad ↑/↓/← → STAND / SIT / WALK, 그 바로 위 Back → ROBOT START.
+    // 화면 버튼과 **같은 경로**(CommandBus)로 나간다 — 조이스틱으로 걷는 중에
+    // 자세 전환을 하려고 마우스로 손을 옮기지 않아도 되게 하려는 것이고,
+    // 경로를 하나로 두어야 FSM 가드가 한 번만 걸린다.
+    connect(m_joyWorker, &JoystickWorker::fsmCommandRequested, this, [this](int command) {
+        FILE_LOG(logINFO) << "[CMD] " << command << " (gamepad)";
+        m_command->send(command);
+    });
 
     m_joyThread->start();
 }
