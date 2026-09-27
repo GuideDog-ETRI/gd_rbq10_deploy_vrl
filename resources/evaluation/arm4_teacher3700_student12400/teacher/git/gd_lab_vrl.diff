@@ -1,0 +1,130 @@
+--- git status ---
+On branch main
+Your branch is ahead of 'origin/main' by 1 commit.
+  (use "git push" to publish your local commits)
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   scripts/train_vrl.py
+	modified:   src/gd_lab/agents/dreamwaq_vrl_ppo_cfg.py
+	modified:   src/gd_lab/rl/runner.py
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	src/gd_lab/rl/online_rollout.py
+	src/gd_lab/rl/online_top5.py
+	tests/test_online_top5.py
+
+no changes added to commit (use "git add" and/or "git commit -a") 
+
+
+--- git diff ---
+diff --git a/scripts/train_vrl.py b/scripts/train_vrl.py
+index 46610c6..df174a8 100644
+--- a/scripts/train_vrl.py
++++ b/scripts/train_vrl.py
+@@ -68,6 +68,7 @@ import gd_lab  # noqa: F401  (registers the tasks)
+ from gd_lab.core.paths import LOG_ROOT
+ from gd_lab.deploy.metadata import capture_context
+ from gd_lab.managers.action_history import ensure_prev_prev_action_tracking
++from gd_lab.mdp.terrain_families import family_column_masks
+ from gd_lab.tasks.vrl_cameras import configure_vrl_cameras
+ 
+ torch.backends.cuda.matmul.allow_tf32 = True
+@@ -133,6 +134,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg):
+ 
+     runner_class = _resolve(agent_cfg.class_name)
+     runner: OnPolicyRunner = runner_class(env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device)
++    columns = {name: indices.cpu().tolist() for name, indices in family_column_masks(env.unwrapped).items()}
++    runner.configure_online_top5(columns, spacing=agent_cfg.top5_min_spacing)
+     # A capture failure must not cost a training run; export refuses later
+     # rather than guessing.
+     try:
+diff --git a/src/gd_lab/agents/dreamwaq_vrl_ppo_cfg.py b/src/gd_lab/agents/dreamwaq_vrl_ppo_cfg.py
+index 81c3756..f406720 100644
+--- a/src/gd_lab/agents/dreamwaq_vrl_ppo_cfg.py
++++ b/src/gd_lab/agents/dreamwaq_vrl_ppo_cfg.py
+@@ -56,4 +56,6 @@ def _vrl_algorithm():
+ class DreamwaqVrlRunnerCfg(DreamwaqRunnerCfg):
+     algorithm = _vrl_algorithm()
+     experiment_name = "vision_rbq10_dreamwaq"
++    save_interval = 100
++    top5_min_spacing: int = 100
+     policy = _vrl_policy()
+diff --git a/src/gd_lab/rl/runner.py b/src/gd_lab/rl/runner.py
+index 13aa4b3..eb42ab5 100644
+--- a/src/gd_lab/rl/runner.py
++++ b/src/gd_lab/rl/runner.py
+@@ -3,14 +3,18 @@
+ from __future__ import annotations
+ 
+ import importlib
++from pathlib import Path
+ 
+ import torch
++import torch.distributed as dist
+ from rsl_rl.algorithms import PPO
+ from rsl_rl.modules import resolve_rnd_config, resolve_symmetry_config
+ from rsl_rl.runners import OnPolicyRunner
+ from tensordict import TensorDict
+ 
+ from .actor_critic import DreamwaqActorCritic
++from .online_rollout import install_episode_collector
++from .online_top5 import rank_and_save_top5
+ 
+ 
+ def _resolve_class(name: str) -> type:
+@@ -50,6 +54,52 @@ class DreamwaqRunner(OnPolicyRunner):
+     #: Carried in every checkpoint because export runs without a simulator.
+     deploy_context: dict | None = None
+ 
++    def configure_online_top5(self, family_columns: dict[str, list[int]], spacing: int = 100) -> None:
++        """Enable rollout-only ranking for Vision runs; blind runs stay unchanged."""
++        self._top5_records = install_episode_collector(self.env, family_columns)
++        self._top5_spacing = spacing
++
++    def learn(self, num_learning_iterations: int, init_at_random_ep_len: bool = False):
++        if not hasattr(self, "_top5_records"):
++            return super().learn(num_learning_iterations, init_at_random_ep_len)
++        original_update = self.alg.update
++        next_iteration = self.current_learning_iteration
++
++        def update_and_rank():
++            nonlocal next_iteration
++            result = original_update()
++            self.current_learning_iteration = next_iteration
++            records = self._top5_records
++            local = list(records)
++            records.clear()
++            if self.is_distributed:
++                gathered = [None] * self.gpu_world_size
++                dist.all_gather_object(gathered, local)
++                rank = dist.get_rank()
++                episodes = [row for batch in gathered for row in batch] if rank == 0 else []
++            else:
++                rank = 0
++                episodes = local
++            status = {"selected": False, "saved": False, "error": None}
++            if rank == 0 and not self.disable_logs and self.log_dir is not None:
++                status = rank_and_save_top5(
++                    rank, episodes, Path(self.log_dir) / "best_top5", next_iteration, self._top5_spacing, self.save
++                )
++            if self.is_distributed:
++                message = [status]
++                dist.broadcast_object_list(message, src=0)
++                status = message[0]
++            if status["error"]:
++                raise RuntimeError(status["error"])
++            next_iteration += 1
++            return result
++
++        self.alg.update = update_and_rank
++        try:
++            return super().learn(num_learning_iterations, init_at_random_ep_len)
++        finally:
++            self.alg.update = original_update
++
+     def save(self, path: str, infos: dict | None = None) -> None:
+         extra = {"learning_rate": self.alg.learning_rate}
+         policy = self.alg.policy
