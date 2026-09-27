@@ -193,6 +193,28 @@ RBQ_WALK=sdk RBQ_POLICY_FILE=rbq10 scripts/run.sh   # 이번만 이 정책으로
 
 ## 문서
 
+### Arm4 VRL 학생 모델
+
+VRL 백엔드는 Arm4 기준으로 actor 100 Hz(500 Hz ref의 decimation 5),
+Kp hip/thigh 123.39 및 knee 127.77, Kd 2.4를 사용한다.
+50 Hz로 학습한 기존 VRL 모델은 이 설정과 호환되지 않는다.
+학생은 5 ms마다 수신 여부를 확인하며, BT0--3의 depth/IR 8채널이 모두
+새로 들어온 경우에만 GRU를 갱신한다. 영상 사이에는 actor가 최근 latent를 사용한다.
+수신 시각 차이가 50 ms를 넘거나 250 ms 이상 오래된 영상은 사용하지 않는다.
+이는 촬영 시각 동기화를 보장하지 않는다. latent도 250 ms 뒤 만료되며,
+현재 actor의 기존 폴백은 zero latent이고 자동 정지는 구현되어 있지 않다.
+
+Actor와 student ONNX를 같은 폴더에 `policy_vrl.onnx`,
+`policy_vrl_student.onnx` 이름으로 배치하고 실행한다:
+
+```bash
+RBQ_WALK=ours RBQ_POLICY_FILE=vrl/arm4_teacher3700/policy_vrl.onnx \
+  RBQ_SIM_VISION=1 bash scripts/run_sim_vrl.sh
+```
+
+수정한 C++ 두 파일은 실제 SDK/Eigen/OpenCV 헤더를 사용한 컴파일 구문 검사를
+통과했다. Pilot 전체 링크와 MuJoCo 실행 검증은 대상 PC에서 추가로 필요하다.
+
 설계 근거는 코드 옆에 있다. 읽는 순서로:
 
 | | |

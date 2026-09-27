@@ -7,7 +7,9 @@
 #include <initializer_list>
 
 #include <onnxruntime_cxx_api.h>
-#include <opencv2/opencv.hpp>
+#include <opencv2/core.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
 
 #include <rbq_sdk/dds/Subscriber.hpp>
 #include <rbq_sdk/idl/ros2/CompressedImage_.hpp>
@@ -29,6 +31,7 @@ int64_t nowMs() {
 // 시도하는 것처럼 보일 수 있으므로, 학습 카메라 주기(80ms)의 몇 배만
 // 허용한다.
 constexpr int64_t kStaleMs = 250;
+constexpr int64_t kMaxReceiveSkewMs = 50;
 
 // 2026-09-19: 소스 해상도가 kImgW/kImgH와 크기만 다르면 cv::resize가 크래시 없이
 // 알아서 맞춰주지만, 종횡비까지 다르면 그 resize가 화면을 찌그러뜨린다 -- 학습
@@ -104,6 +107,7 @@ VisionStudentThread::VisionStudentThread(const std::string& studentOnnxPath, int
                 std::lock_guard<std::mutex> lock(m_cams[i].mtx);
                 m_cams[i].depthPng.assign(m.data().begin(), m.data().end());
                 m_cams[i].depthStampMs = nowMs();
+                ++m_cams[i].depthVersion;
             },
             depthTopic));
         m_subs.push_back(std::make_unique<rbq_sdk::Subscriber<ImageMsg>>(
@@ -111,6 +115,7 @@ VisionStudentThread::VisionStudentThread(const std::string& studentOnnxPath, int
                 std::lock_guard<std::mutex> lock(m_cams[i].mtx);
                 m_cams[i].irJpeg.assign(m.data().begin(), m.data().end());
                 m_cams[i].irStampMs = nowMs();
+                ++m_cams[i].irVersion;
             },
             irTopic));
         FILE_LOG_AS(logINFO, "RLWALK") << "vision student subscribing " << depthTopic << ", " << irTopic;
@@ -119,7 +124,7 @@ VisionStudentThread::VisionStudentThread(const std::string& studentOnnxPath, int
     m_ok.store(true, std::memory_order_release);
     m_thread = std::thread(&VisionStudentThread::studentLoop, this, updatePeriodMs);
     FILE_LOG_AS(logSUCCESS, "RLWALK") << "vision student loaded: " << studentOnnxPath
-                                       << " (period=" << updatePeriodMs << "ms)";
+                                       << " (fresh-frame polling=" << updatePeriodMs << "ms)";
 }
 
 VisionStudentThread::~VisionStudentThread() {
@@ -129,7 +134,7 @@ VisionStudentThread::~VisionStudentThread() {
 
 bool VisionStudentThread::latestLatent(float out[kLatentDim]) const {
     std::lock_guard<std::mutex> lock(m_latentMtx);
-    if (!m_haveLatent) return false;
+    if (!m_haveLatent || nowMs() - m_latentStampMs >= kStaleMs) return false;
     std::memcpy(out, m_latentOut.data(), sizeof(float) * kLatentDim);
     return true;
 }
@@ -141,18 +146,34 @@ void VisionStudentThread::resetHidden() {
     m_haveLatent = false;
 }
 
-void VisionStudentThread::preprocessInto(float* frames) const {
+bool VisionStudentThread::preprocessInto(float* frames) {
     const int64_t now = nowMs();
-    for (int cam = 0; cam < kNumCameras; ++cam) {
-        std::vector<uint8_t> depthBytes, irBytes;
+    struct Snapshot {
+        std::vector<uint8_t> depth, ir;
         int64_t depthStamp, irStamp;
-        {
-            std::lock_guard<std::mutex> lock(m_cams[cam].mtx);
-            depthBytes = m_cams[cam].depthPng;
-            irBytes    = m_cams[cam].irJpeg;
-            depthStamp = m_cams[cam].depthStampMs;
-            irStamp    = m_cams[cam].irStampMs;
-        }
+        uint64_t depthVersion, irVersion;
+    };
+    std::array<Snapshot, kNumCameras> snapshots;
+    int64_t oldest = now, newest = 0;
+    for (int cam = 0; cam < kNumCameras; ++cam) {
+        std::lock_guard<std::mutex> lock(m_cams[cam].mtx);
+        auto& s = snapshots[cam];
+        s = {m_cams[cam].depthPng, m_cams[cam].irJpeg,
+             m_cams[cam].depthStampMs, m_cams[cam].irStampMs,
+             m_cams[cam].depthVersion, m_cams[cam].irVersion};
+        if (s.depth.empty() || s.ir.empty() ||
+            s.depthVersion <= m_consumedDepth[cam] || s.irVersion <= m_consumedIr[cam] ||
+            now - s.depthStamp >= kStaleMs || now - s.irStamp >= kStaleMs) return false;
+        oldest = std::min(oldest, std::min(s.depthStamp, s.irStamp));
+        newest = std::max(newest, std::max(s.depthStamp, s.irStamp));
+    }
+    // Arrival-time bound only: source capture synchronization still needs measurement.
+    if (newest - oldest > kMaxReceiveSkewMs) return false;
+    for (int cam = 0; cam < kNumCameras; ++cam) {
+        const auto& s = snapshots[cam];
+        const auto& depthBytes = s.depth;
+        const auto& irBytes = s.ir;
+        const int64_t depthStamp = s.depthStamp, irStamp = s.irStamp;
 
         float* depthOut = frames + (static_cast<size_t>(cam) * 2 + 0) * kImgH * kImgW;
         float* irOut    = frames + (static_cast<size_t>(cam) * 2 + 1) * kImgH * kImgW;
@@ -185,16 +206,14 @@ void VisionStudentThread::preprocessInto(float* frames) const {
             }
         }
         if (depth16.empty()) {
-            // 데이터 없음 -- "전부 far" 로 채운다 (gd_lab의 무응답 픽셀 처리와
-            // 같은 의미: 화면 전체가 안 보이면 전부 먼 것으로 취급).
-            std::fill(depthOut, depthOut + kImgH * kImgW, 1.0f);
+            return false;
         } else if (depth16.type() != CV_16UC1) {
             // vendor simulator/RealSense 계약은 millimetre 단위 CV_16UC1 PNG다.
             // 다른 포맷을 uint16 row로 강제 해석하면 조용히 잘못된 depth가 된다.
             FILE_LOG_AS(logERROR, "RLWALK")
                 << "vision student camera " << cam << ": depth PNG type " << depth16.type()
-                << " is not CV_16UC1; using far fallback";
-            std::fill(depthOut, depthOut + kImgH * kImgW, 1.0f);
+                << " is not CV_16UC1; skipping this camera set";
+            return false;
         } else {
             for (int y = 0; y < kImgH; ++y) {
                 const uint16_t* row = depth16.ptr<uint16_t>(y);
@@ -217,7 +236,7 @@ void VisionStudentThread::preprocessInto(float* frames) const {
             }
         }
         if (irGray.empty()) {
-            std::fill(irOut, irOut + kImgH * kImgW, 0.0f);
+            return false;
         } else {
             for (int y = 0; y < kImgH; ++y) {
                 const uint8_t* row = irGray.ptr<uint8_t>(y);
@@ -225,6 +244,11 @@ void VisionStudentThread::preprocessInto(float* frames) const {
             }
         }
     }
+    for (int cam = 0; cam < kNumCameras; ++cam) {
+        m_consumedDepth[cam] = snapshots[cam].depthVersion;
+        m_consumedIr[cam] = snapshots[cam].irVersion;
+    }
+    return true;
 }
 
 void VisionStudentThread::studentLoop(int updatePeriodMs) {
@@ -248,7 +272,10 @@ void VisionStudentThread::studentLoop(int updatePeriodMs) {
             m_hidden.fill(0.f);
         }
 
-        preprocessInto(frames.data());
+        if (!preprocessInto(frames.data())) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(updatePeriodMs));
+            continue;
+        }
 
         std::array<Ort::Value, 2> inputs{
             Ort::Value::CreateTensor<float>(mem, frames.data(), frames.size(), framesShp.data(), framesShp.size()),
@@ -259,11 +286,18 @@ void VisionStudentThread::studentLoop(int updatePeriodMs) {
             auto outs = m_session->Run(Ort::RunOptions{nullptr}, inNames, inputs.data(), 2, outNames, 2);
             const float* latent = outs[0].GetTensorMutableData<float>();
             const float* hidden = outs[1].GetTensorMutableData<float>();
+            if (!std::all_of(latent, latent + kLatentDim, [](float v) { return std::isfinite(v); }) ||
+                !std::all_of(hidden, hidden + kHiddenDim, [](float v) { return std::isfinite(v); })) {
+                FILE_LOG_AS(logERROR, "RLWALK") << "vision student produced non-finite outputs";
+                continue;
+            }
             std::memcpy(m_hidden.data(), hidden, sizeof(float) * kHiddenDim);
 
             std::lock_guard<std::mutex> lock(m_latentMtx);
+            if (m_resetRequested.load(std::memory_order_acquire)) continue;
             std::memcpy(m_latentOut.data(), latent, sizeof(float) * kLatentDim);
             m_haveLatent = true;
+            m_latentStampMs = nowMs();
 
             if (tick % 25 == 0) {
                 double depthMean = 0.0, latentNorm = 0.0;

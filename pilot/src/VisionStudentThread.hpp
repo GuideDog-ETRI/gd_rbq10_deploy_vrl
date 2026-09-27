@@ -68,7 +68,7 @@ public:
     static constexpr float kDepthMinM = 0.15f, kDepthMaxM = 5.0f;
 
     // studentOnnxPath: export_student_vrl.py가 내보낸 <actor_stem>_student.onnx.
-    // updatePeriodMs: 학습 때의 카메라 update_period(초)를 ms로 환산한 값 (80).
+    // updatePeriodMs: polling interval; infer only when all depth/IR channels are new.
     VisionStudentThread(const std::string& studentOnnxPath, int updatePeriodMs);
     ~VisionStudentThread();
 
@@ -94,13 +94,14 @@ private:
         std::vector<uint8_t> depthPng;  // 마지막 수신 원본 바이트째 (디코딩은 소비 시점)
         std::vector<uint8_t> irJpeg;
         int64_t depthStampMs = 0, irStampMs = 0;
+        uint64_t depthVersion = 0, irVersion = 0;
     };
 
     void studentLoop(int updatePeriodMs);
     // 4카메라 depth+IR을 디코딩/전처리해서 (kNumCameras*2*kImgH*kImgW) 평탄
     // 버퍼에 담는다. gd_lab의 (num_envs, 4, 2, H, W) 텐서와 동일한 메모리 순서
     // (env=1 고정, camera-major -> channel-major -> H -> W).
-    void preprocessInto(float* frames) const;
+    bool preprocessInto(float* frames);
 
     std::unique_ptr<Ort::Env>     m_env;
     std::unique_ptr<Ort::Session> m_session;
@@ -122,7 +123,9 @@ private:
     mutable std::mutex m_latentMtx;
     std::array<float, kLatentDim> m_latentOut{};
     bool m_haveLatent = false;
+    int64_t m_latentStampMs = 0;
 
     // student 루프 스레드 전용 -- 락 불필요.
     std::array<float, kHiddenDim> m_hidden{};
+    std::array<uint64_t, kNumCameras> m_consumedDepth{}, m_consumedIr{};
 };

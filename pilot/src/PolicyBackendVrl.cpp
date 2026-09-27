@@ -32,7 +32,7 @@ Eigen::Vector3d projectedGravity(const RbqLink::Snapshot& snap) {
 }
 
 constexpr float kDreamKp[3] = {123.39f, 123.39f, 127.77f};
-constexpr float kDreamKd[3] = {2.5f, 2.5f, 2.5f};
+constexpr float kDreamKd[3] = {2.4f, 2.4f, 2.4f};  // Arm4 training gains
 constexpr float kOffsetOnnx[12] = {0.0f, 0.0f, 0.0f, 0.0f,
                                    0.76f, 0.76f, 0.76f, 0.76f,
                                    -1.45f, -1.45f, -1.45f, -1.45f};
@@ -59,7 +59,7 @@ void onnxToMotor(const float in[12], float out[12]) {
 struct DreamVrlBackend::Impl {
     static constexpr int kH          = 5;
     static constexpr int kStepDim    = 45;
-    static constexpr int kDecimation = 10;  // Dream과 동일(50Hz) -- proprio 학습 decimation은 안 바뀜
+    static constexpr int kDecimation = 5;  // Arm4: 500 Hz reference / 5 = 100 Hz actor
     static constexpr int kLatentDim  = VisionStudentThread::kLatentDim;
 
     std::unique_ptr<Ort::Env>     env;
@@ -135,11 +135,9 @@ struct DreamVrlBackend::Impl {
                 << " (run scripts/export_student_vrl.py first)";
             return false;
         }
-        // 학습 때의 카메라 update_period(0.08s)와 동일한 80ms --
-        // tasks/vrl_rough.py VisionRoughEnvCfg.__post_init__의
-        // 4*policy_dt(=4*0.02s) 참고. 어긋나면 student가 학습 때와 다른
-        // 빈도로 굴러서, GRU가 훈련 때 못 본 시간 스케일을 보게 된다.
-        student = std::make_unique<VisionStudentThread>(studentPath.string(), 80);
+        // Poll for a fresh four-camera set. GRU advances only on new images;
+        // actor holds the latest latent between camera arrivals (10--15 Hz).
+        student = std::make_unique<VisionStudentThread>(studentPath.string(), 5);
         if (!student->ok()) {
             FILE_LOG_AS(logERROR, "RLWALK") << "vision student thread failed to start";
             return false;
