@@ -51,6 +51,7 @@ public:
         Idle,       // 발행 없음
         Handshake,  // hold ref + owner cmd, owner==20 대기
         Walk,       // 정책 추론 + ref 스트림
+        VisionHold, // sim-only bounded pose hold while Supervisor requests STAND
         Damp,       // kp=0 감쇠 스트림 (자체 E-stop). stop() 으로만 탈출
         Fault,      // 획득 실패 등. 발행 없음. stop() 으로 Idle 복귀
     };
@@ -61,7 +62,7 @@ public:
     // Supervisor 가 소유권 반환 판정에 쓴다.
     static constexpr int kProcessId = 20;
 
-    explicit RlWalker(RbqLink& link);
+    explicit RlWalker(RbqLink& link, bool simulationHandoff = false);
     ~RlWalker();
 
     RlWalker(const RlWalker&)            = delete;
@@ -73,6 +74,7 @@ public:
     //
     bool init(const std::string& policyPath, float payloadKg);
     bool ready() const { return m_ready; }
+    bool readyForWalk() const { return m_ready && m_policy && m_policy->readyForWalk(); }
 
     // 전부 Qt 이벤트 루프 스레드에서. 루프 스레드가 요청을 소비한다.
     void start();   // Idle/Fault → Handshake (→ Walk)
@@ -116,6 +118,7 @@ private:
     void tickHandshake(const RbqLink::Snapshot& snap, int64_t nowNs);
     void tickWalk(const RbqLink::Snapshot& snap, int64_t nowNs);
     void tickDamp(const RbqLink::Snapshot& snap, int64_t nowNs);
+    void tickVisionHold(const RbqLink::Snapshot& snap, int64_t nowNs);
 
     // 워치독. Walk 에서 매 틱 — 걸리면 Damp 로 떨어지고 이유를 남긴다.
     bool safetyTripped(const RbqLink::Snapshot& snap, int64_t nowNs);
@@ -131,6 +134,7 @@ private:
     static int64_t nowMonotonicNs();
 
     RbqLink& m_link;
+    const bool m_simulationHandoff;
 
     // MotionRef_/JointOwnershipCmd_ 는 무거운 생성 헤더라 cpp 에만 안다.
     struct Dds;

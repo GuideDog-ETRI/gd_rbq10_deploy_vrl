@@ -78,6 +78,10 @@ public:
     // 호출자가 Damp 로 떨어뜨린다.
     virtual bool infer(const RbqLink::Snapshot& snap, const float cmd[3],
                        float targetPos[12]) = 0;
+    // Only sensor expiry may request a controlled handoff. NaN/inference faults
+    // retain the hard-fault path. Queried on the inference thread after false.
+    virtual bool visionExpired() const { return false; }
+    virtual bool readyForWalk() const { return true; }
 
     // 로그 한 줄용. 무엇이 실렸는지가 사후 판독의 출발점이다.
     virtual std::string describe() const = 0;

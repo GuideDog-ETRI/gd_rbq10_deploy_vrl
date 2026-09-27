@@ -46,6 +46,13 @@ PILOT_TCP=19100
 PILOT_BEACON=19101
 
 RBQ_SIM_VISION="${RBQ_SIM_VISION:-1}"
+RBQ_VRL_HISTORY_INIT="${RBQ_VRL_HISTORY_INIT:-zeros}"
+if [ "${1:-}" != "stop" ]; then
+    case "${RBQ_VRL_HISTORY_INIT}" in
+        zeros|repeat_first) ;;
+        *) echo "ERROR: RBQ_VRL_HISTORY_INIT must be zeros or repeat_first" >&2; exit 2 ;;
+    esac
+fi
 
 # ---- stop: 역순으로 정리 ----------------------------------------------------
 if [ "${1:-}" = "stop" ]; then
@@ -72,7 +79,7 @@ if [ ! -f "${BUILD_DIR}/CMakeCache.txt" ]; then
     exit 1
 fi
 echo "[run_sim_vrl] building..."
-cmake --build "${BUILD_DIR}" -j"$(nproc)"
+cmake --build "${BUILD_DIR}" -j"${RBQ_BUILD_JOBS:-4}"
 
 # ---- vRL 정책 존재 확인 --------------------------------------------------------
 # resources/policy/vrl/ 안에 .onnx 가 없으면 여기서 바로 끊는다 -- Pilot 이
@@ -135,7 +142,7 @@ done
 if ! docker exec "${SIM_CONTAINER}" pgrep -x Motion >/dev/null 2>&1; then
     echo '[run_sim_vrl] Motion never came up — check its tab.'
 else
-    CONTAINER='${SIM_CONTAINER}' RBQ_SIM_VISION=${RBQ_SIM_VISION} IFACE=lo bash '${REPO_DIR}/docker/rbq_sim.sh' mujoco
+    CONTAINER='${SIM_CONTAINER}' RBQ_SIM_SYNC_VISION='${RBQ_SIM_SYNC_VISION:-0}' RBQ_SIM_VISION=${RBQ_SIM_VISION} IFACE=lo bash '${REPO_DIR}/docker/rbq_sim.sh' mujoco
 fi
 EOF
 
@@ -146,6 +153,10 @@ cat > "${TAB_DIR}/pilot.sh" <<EOF
 #!/bin/bash
 cd '${REPO_DIR}'
 export RBQ_POLICY_FILE='${RBQ_POLICY_FILE}'
+export RBQ_VRL_HISTORY_INIT='${RBQ_VRL_HISTORY_INIT}'
+export RBQ_WALK='${RBQ_WALK:-ours}'
+export RBQ_PAYLOAD_KG='${RBQ_PAYLOAD_KG:-6}'
+export RBQ_HEALTH='${RBQ_HEALTH:-1}'
 '${BUILD_DIR}/pilot/CAMEL-Pilot' --interface lo --sim \\
     --tcp-port ${PILOT_TCP} --beacon-port ${PILOT_BEACON}
 EOF

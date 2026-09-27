@@ -125,6 +125,7 @@ private:
     // RlWalk 2단계 진입의 래치: rl_trot 기동 완료를 기다렸다가 탈취했는가.
     // (순서 근거는 handleCommand 의 WALK 브랜치 주석 — 먼저 뺏으면 도로 뺏긴다)
     bool m_rlClaimed  = false;
+    bool m_visionStopping = false;
     // 복귀의 settle 창 (0 = 없음). 이 시각까지 정책이 속도 0 으로 제자리
     // 정지한 뒤에야 스트림을 접고 STANDING 을 요청한다 — 움직이는 채 넘기면
     // QuadWalk 의 stance 전환이 넘어진다 (handleStand 주석의 실측).
