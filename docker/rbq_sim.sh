@@ -89,6 +89,11 @@ cmd_build() {
 }
 
 cmd_up() {
+    # Rebuild from the untouched vendor model on every launch (never accumulate mass).
+    if [ -n "${TERRAIN_DIR}" ] && grep -q 'rbq_payload.xml' "${TERRAIN_DIR}/rbq_environment.xml"; then
+        python3 "${SCRIPT_DIR}/prepare_payload.py" "${RBQ_DIR}" \
+            "${TERRAIN_DIR}/rbq_payload.xml" --mass "${RBQ_PAYLOAD_KG:-6}"
+    fi
     # X 접근 허용은 컨테이너 생성 여부와 무관하게 매번 해야 한다.
     # xhost 항목은 X 세션이 끝나면 사라지므로, 재부팅/재로그인 후 기존 컨테이너를
     # start 만 하면 GUI 앱이 다시 막힌다. 그래서 early return 앞에 둔다.
@@ -259,9 +264,9 @@ cmd_stop() {
     local apps=()
     case "${target}" in
         motion) apps=(Motion) ;;
-        mujoco) apps=(Mujoco) ;;
+        mujoco) apps=(Mujoco MujocoVrlSync) ;;
         gui)    apps=(GUI) ;;
-        all)    apps=(Motion Mujoco GUI) ;;
+        all)    apps=(Motion Mujoco MujocoVrlSync GUI) ;;
         *)      echo "stop 대상: motion | mujoco | gui | all"; exit 1 ;;
     esac
     for a in "${apps[@]}"; do
@@ -350,6 +355,10 @@ case "${1:-}" in
     # (a plain XResizeWindow does not trigger Xephyr's resize-and-renegotiate
     # RandR path, so this does not change what Mujoco already rendered at).
     mujoco) VISION_ARG="--vision"
+            MUJOCO_APP=Mujoco
+            [ "${RBQ_SIM_SYNC_VISION:-0}" = "1" ] && MUJOCO_APP=MujocoVrlSync
+            MUJOCO_MODEL_ARG=""
+            [ "${MUJOCO_APP}" = "MujocoVrlSync" ] && MUJOCO_MODEL_ARG="--path /workspace/RBQ/resources/model/rbq_environment.xml"
             [ "${RBQ_SIM_VISION:-1}" = "0" ] && VISION_ARG=""
             MUJOCO_XDISPLAY="${MUJOCO_XDISPLAY:-:2}"
             # 3774x1439: empirically the max on this desktop (3840x2160 real
@@ -399,11 +408,11 @@ case "${1:-}" in
                     ) &
                 fi
 
-                DISPLAY="${MUJOCO_XDISPLAY}" cmd_exec_app Mujoco \
-                    "cd bin && exec sudo ./Mujoco --interface ${IFACE} ${VISION_ARG} ${*:2}"
+                DISPLAY="${MUJOCO_XDISPLAY}" cmd_exec_app "${MUJOCO_APP}" \
+                    "cd bin && exec sudo ./${MUJOCO_APP} --interface ${IFACE} ${VISION_ARG} ${MUJOCO_MODEL_ARG} ${*:2}"
             else
                 echo "[rbq_sim] Xephyr not found (apt install xserver-xephyr) -- launching on ${DISPLAY} directly, window may not render on this desktop"
-                cmd_exec_app Mujoco "cd bin && exec sudo ./Mujoco --interface ${IFACE} ${VISION_ARG} ${*:2}"
+                cmd_exec_app "${MUJOCO_APP}" "cd bin && exec sudo ./${MUJOCO_APP} --interface ${IFACE} ${VISION_ARG} ${MUJOCO_MODEL_ARG} ${*:2}"
             fi ;;
     gui)    cmd_exec_app GUI "cd bin && exec ./GUI --sim ${*:2}" ;;
     stop)   cmd_stop "${2:-all}" ;;

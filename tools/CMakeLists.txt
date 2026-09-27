@@ -12,6 +12,16 @@
 
 find_package(Qt6 REQUIRED COMPONENTS Core)   # PolicyRuntime 의 QJson
 
+add_executable(sim-state-probe src/sim_state_probe.cpp)
+target_link_libraries(sim-state-probe PRIVATE rbq_sdk::rbq_sdk)
+
+add_executable(vision-latent-gate-test src/vision_latent_gate_test.cpp)
+target_include_directories(vision-latent-gate-test PRIVATE ${CMAKE_SOURCE_DIR}/pilot/src)
+target_compile_options(vision-latent-gate-test PRIVATE -UNDEBUG)
+add_executable(capture-frame-queue-test src/capture_frame_queue_test.cpp)
+target_include_directories(capture-frame-queue-test PRIVATE ${CMAKE_SOURCE_DIR}/pilot/src)
+target_compile_options(capture-frame-queue-test PRIVATE -UNDEBUG)
+
 # PolicyBackend.cpp 가 PolicyBackendVrl.hpp 를 포함해 DreamVrlBackend 를 참조하므로
 # (vision-RL 3-input 판별 분기), PolicyBackend.cpp 를 소스로 직접 링크하는 타깃은
 # 전부 그 구현(+ VisionStudentThread, OpenCV)도 같이 링크해야 한다 -- 안 그러면
@@ -54,6 +64,15 @@ target_link_libraries(policy-smoke PRIVATE
 # 받아 파일로 저장하는 최소 진단 도구. "데이터가 실제로 흐르는지"만 빠르게 본다.
 add_executable(vision-snapshot src/vision_snapshot.cpp)
 target_link_libraries(vision-snapshot PRIVATE rbq_sdk::rbq_sdk)
+add_executable(vision-timing-probe src/vision_timing_probe.cpp)
+target_link_libraries(vision-timing-probe PRIVATE rbq_sdk::rbq_sdk)
+
+# Read-only A/B: production decoder + student inference, no actor or command publisher.
+add_executable(vision-student-probe src/vision_student_probe.cpp
+    ${CMAKE_SOURCE_DIR}/pilot/src/VisionStudentThread.cpp)
+target_include_directories(vision-student-probe PRIVATE ${CMAKE_SOURCE_DIR}/pilot/src ${OpenCV_INCLUDE_DIRS})
+target_link_libraries(vision-student-probe PRIVATE wire rbq_sdk::rbq_sdk
+    onnxruntime::onnxruntime ${OpenCV_LIBS})
 
 # vision-viewer — 같은 토픽을 계속 구독하며 BT0-3 depth 를 2x2 로 타일링해 띄운다.
 add_executable(vision-viewer src/vision_viewer.cpp)

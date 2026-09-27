@@ -147,6 +147,7 @@ void Supervisor::handleCommand(int userCommand) {
 
     // E-stop 은 상태를 가리지 않는다. 다른 명령보다 먼저.
     if (userCommand == CMD_CTRL_E_STOP) {
+        m_visionStopping = false;
         // 소유권을 쥔 동안 벤더 Damp 는 액추에이터에 닿지 않는다 — 실효는 walker
         // 의 감쇠 스트림이다. 벤더 damp 도 같이 보낸다: QuadWalk 가 능동 명령을
         // 시작하면 takeover 로 소유권이 넘어가 벤더 감쇠로 이어지고, 안 넘어가면
@@ -161,6 +162,7 @@ void Supervisor::handleCommand(int userCommand) {
 
     switch (userCommand) {
     case CMD_CTRL_START:
+        m_visionStopping = false;
         // 어느 상태에서든 재무장 가능 — E-stop 후 탈출 경로이기도 하다.
         // 발행은 여기서 하지 않는다 — ARMING 의 tick 이 2 초마다 재발행한다.
         // 일회성 발행은 DDS 매칭 레이스로 유실된다 (실측: 같은 시점에 만든
@@ -199,6 +201,10 @@ void Supervisor::handleCommand(int userCommand) {
 
     case CMD_CTRL_WALK:
         if (m_state == State::Stand) {
+            if (useRlWalk() && !m_walker->readyForWalk()) {
+                FILE_LOG_AS(logWARNING, "FSM") << "WALK refused: fresh vision result not ready; remain STAND";
+                break;
+            }
             m_fallback = m_state;
             if (useRlWalk()) {
                 // 순서가 생명이다: 먼저 QuadWalk 를 rl_trot 으로 보내고,
@@ -297,6 +303,26 @@ void Supervisor::tick() {
 
     case State::StandUp:
     case State::TrotStop:
+        if (m_visionStopping) {
+            m_vx = m_vy = m_omegaZDeg = 0.f;
+            if (m_walker->phase() == RlWalker::Phase::Damp || elapsed >= 2500000000LL) {
+                m_walker->damp();
+                m_link.damp();
+                m_visionStopping = false;
+                enter(State::Estop, "vision STAND handoff failed");
+                break;
+            }
+            bool ownerStuck = false;
+            for (int i = 0; i < 12; ++i) ownerStuck |= snap.owner[i] == RlWalker::kProcessId;
+            if (!ownerStuck && snap.gaitId == kGaitStanding && snap.isStanding) {
+                m_walker->stop();
+                m_visionStopping = false;
+                enter(State::Stand, "vision expired: vendor STAND takeover confirmed; WALK requires explicit command");
+            } else {
+                retryGait(kGaitStanding, snap.gaitId);
+            }
+            break;
+        }
         // 복귀 ①: settle 창. 정책이 속도 0 으로 제자리 정지하는 동안
         // 스트림을 유지하고, 끝나면 접고 STANDING 을 요청한다 (handleStand 주석).
         if (m_rlSettleUntilNs != 0) {
@@ -400,6 +426,15 @@ void Supervisor::tick() {
             break;   // 소유권 대기 (600 ms 상한은 walker 쪽에 있다)
         case RlWalker::Phase::Walk:
             m_walker->setCommand(m_vx, m_vy, m_omegaZDeg * float(M_PI / 180.0));
+            break;
+        case RlWalker::Phase::VisionHold:
+            m_vx = m_vy = m_omegaZDeg = 0.f;
+            m_walker->setCommand(0.f, 0.f, 0.f);
+            m_rlSettleUntilNs = 0;
+            m_visionStopping = true;
+            m_link.publishSwitchGait(kGaitStanding);
+            m_lastGaitPubNs = nowNs();
+            enter(State::TrotStop, "vision expired: sim STAND handoff");
             break;
         case RlWalker::Phase::Fault:
         case RlWalker::Phase::Idle:

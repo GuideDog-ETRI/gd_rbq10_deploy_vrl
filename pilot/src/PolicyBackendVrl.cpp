@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <vector>
@@ -13,8 +15,14 @@
 #include <common/Log.hpp>
 
 #include "VisionStudentThread.hpp"
+#include "VisionLatentGate.hpp"
 
 namespace {
+
+int64_t steadyMs() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+}
 
 bool featureShapeMatches(const std::vector<int64_t>& shape, int expected) {
     return shape.size() == 2 && (shape.back() < 0 || shape.back() == expected);
@@ -72,11 +80,35 @@ struct DreamVrlBackend::Impl {
     std::array<float, 12> prevAction{};
     std::array<std::array<float, kStepDim>, kH> hist{};
     int histIdx = 0, histCount = 0;
+    bool repeatFirstHistory = false;  // staged A/B: keep existing behavior by default
+    VisionLatentGate latentGate;
+    std::array<float, 12> startupHold{};
+    bool waitingLogged = false;
+    bool expired = false;
+
+    // Observation-only diagnostics; no changes to latent fallback or control output.
+    struct Diagnostic {
+        std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+        int calls = 0, missing = 0, stale = 0, edges = 0;
+        int64_t maxAgeMs = -1;
+        float maxDelta = 0.f, edgeDelta = 0.f;
+        bool havePrevious = false, previousValid = false;
+    } diag;
 
     std::unique_ptr<VisionStudentThread> student;
     std::string desc;
 
     bool load(const std::string& actorOnnxPath, float payloadKgIn) {
+        const char* initialization = std::getenv("RBQ_VRL_HISTORY_INIT");
+        if (initialization && std::strcmp(initialization, "zeros") != 0 &&
+            std::strcmp(initialization, "repeat_first") != 0) {
+            FILE_LOG_AS(logERROR, "RLWALK")
+                << "RBQ_VRL_HISTORY_INIT must be zeros or repeat_first";
+            return false;
+        }
+        repeatFirstHistory = initialization && std::strcmp(initialization, "repeat_first") == 0;
+        FILE_LOG_AS(logINFO, "RLWALK") << "VRL history_init="
+            << (repeatFirstHistory ? "repeat_first" : "zeros") << " action_clip=5 (unchanged)";
         payloadKg = payloadKgIn;
         env = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "camel_rlwalk_vrl");
         Ort::SessionOptions opts;
@@ -177,6 +209,12 @@ struct DreamVrlBackend::Impl {
     }
 
     void pushHistory(const float step[kStepDim]) {
+        if (histCount == 0 && repeatFirstHistory) {
+            for (auto& frame : hist) std::memcpy(frame.data(), step, sizeof(float) * kStepDim);
+            histCount = kH;
+            histIdx = 0;
+            return;
+        }
         int slot;
         if (histCount < kH) {
             slot = histCount++;
@@ -213,13 +251,24 @@ struct DreamVrlBackend::Impl {
 
     bool inferAndStageTargets(float targetPos[12]) {
         float latent[kLatentDim];
-        if (!student->latestLatent(latent)) {
-            // student가 아직 첫 카메라 프레임도 못 받은 초기 구간 -- 0-벡터로
-            // 시작한다 (gd_lab의 student.init_hidden() 직후 latent=0 초기값과
-            // 같은 취급; teacher의 terrain_encoder도 학습 초반엔 이 근방에서
-            // 시작하므로 액션이 갑자기 튀지는 않는다).
-            std::fill(latent, latent + kLatentDim, 0.f);
+        int64_t latentAgeMs = -1;
+        const bool available = student->latestLatent(latent, &latentAgeMs);
+        const auto visionState = latentGate.update(available, latentAgeMs, steadyMs());
+        if (visionState == VisionLatentGate::State::Fault) {
+            expired = true;
+            FILE_LOG_AS(logERROR, "RLWALK") << "TRIP: vision unavailable/expired age_ms="
+                << latentAgeMs << " timeout_ms=" << VisionLatentGate::kTimeoutMs;
+            return false;  // Existing RlWalker fault path enters Damp; no zero-latent inference.
         }
+        if (visionState == VisionLatentGate::State::Waiting) {
+            if (!waitingLogged) {
+                FILE_LOG_AS(logWARNING, "RLWALK") << "waiting for first vision result; holding WALK-entry pose";
+                waitingLogged = true;
+            }
+            std::copy(startupHold.begin(), startupHold.end(), targetPos);
+            return true;
+        }
+        const bool latentValid = visionState == VisionLatentGate::State::Fresh;
 
         Ort::MemoryInfo mem = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
         std::array<int64_t, 2> directShp{1, static_cast<int64_t>(directObs.size())};
@@ -238,13 +287,45 @@ struct DreamVrlBackend::Impl {
         const float* act = outs[0].GetTensorMutableData<float>();
 
         float targetOnnx[12];
+        float targetDelta = 0.f;
         for (int i = 0; i < 12; ++i) {
             if (!std::isfinite(act[i])) return false;  // 정책 발산 -- 호출자가 Damp
             const float a = std::clamp(act[i], -kActionClamp, kActionClamp);
+            targetDelta = std::max(targetDelta, std::abs(a - prevAction[i]) * kActionScale);
             prevAction[i] = a;
             targetOnnx[i] = a * kActionScale + kOffsetOnnx[i];
         }
         onnxToMotor(targetOnnx, targetPos);
+        ++diag.calls;
+        if (!latentValid) {
+            if (latentAgeMs < 0) ++diag.missing;
+            else ++diag.stale;
+        }
+        diag.maxAgeMs = std::max(diag.maxAgeMs, latentAgeMs);
+        if (diag.havePrevious) {
+            diag.maxDelta = std::max(diag.maxDelta, targetDelta);
+            if (latentValid != diag.previousValid) {
+                ++diag.edges;
+                diag.edgeDelta = std::max(diag.edgeDelta, targetDelta);
+            }
+        }
+        diag.havePrevious = true;
+        diag.previousValid = latentValid;
+        const auto now = std::chrono::steady_clock::now();
+        const double seconds = std::chrono::duration<double>(now - diag.start).count();
+        if (seconds >= 1.0) {
+            FILE_LOG_AS(logINFO, "VRLDIAG")
+                << "actor_hz=" << diag.calls / seconds << " n=" << diag.calls
+                << " held=" << diag.stale
+                << " freshness_edges=" << diag.edges << " age_max_ms=" << diag.maxAgeMs;
+            FILE_LOG_AS(logINFO, "VRLDIAG")
+                << "target_step_max_rad=" << diag.maxDelta
+                << " freshness_edge_step_max_rad=" << diag.edgeDelta;
+            diag = Diagnostic{};
+            diag.start = now;
+            diag.havePrevious = true;
+            diag.previousValid = latentValid;
+        }
         return true;
     }
 };
@@ -265,10 +346,15 @@ void DreamVrlBackend::gains(float kp[12], float kd[12]) const {
     }
 }
 
-void DreamVrlBackend::reset(const RbqLink::Snapshot&) {
+void DreamVrlBackend::reset(const RbqLink::Snapshot& snap) {
     for (auto& s : m_impl->hist) s.fill(0.f);
     m_impl->histIdx = m_impl->histCount = 0;
     m_impl->prevAction.fill(0.f);
+    m_impl->diag = Impl::Diagnostic{};
+    m_impl->latentGate.reset(steadyMs());
+    m_impl->waitingLogged = false;
+    m_impl->expired = false;
+    for (int i = 0; i < 12; ++i) m_impl->startupHold[i] = static_cast<float>(snap.pos[i]);
     m_impl->student->resetHidden();
 }
 
@@ -281,3 +367,11 @@ bool DreamVrlBackend::infer(const RbqLink::Snapshot& snap, const float cmd[3], f
 }
 
 std::string DreamVrlBackend::describe() const { return m_impl->desc; }
+
+bool DreamVrlBackend::visionExpired() const { return m_impl->expired; }
+bool DreamVrlBackend::readyForWalk() const {
+    if (!m_impl->student) return false;
+    float latent[Impl::kLatentDim];
+    int64_t age = -1;
+    return m_impl->student->latestLatent(latent, &age) && age >= 0 && age < VisionLatentGate::kFreshMs;
+}

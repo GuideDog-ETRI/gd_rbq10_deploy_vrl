@@ -48,3 +48,12 @@ target_include_directories(CAMEL-Pilot PRIVATE ${OpenCV_INCLUDE_DIRS})
 # 빌드에서는 scripts/deploy.sh 가 DEPLOY_PREFIX 를 타깃 경로로 덮어쓴다
 # (루트 CMakeLists.txt 참고).
 target_compile_definitions(CAMEL-Pilot PRIVATE CONFIG_DIR="${DEPLOY_PREFIX}")
+
+# Explicit diagnostic binary; production has no replay/injection code.
+get_target_property(VISION_TEST_SOURCES CAMEL-Pilot SOURCES)
+add_executable(CAMEL-Pilot-vision-test EXCLUDE_FROM_ALL ${VISION_TEST_SOURCES})
+target_link_libraries(CAMEL-Pilot-vision-test PRIVATE wire rbq_sdk::rbq_sdk
+    onnxruntime::onnxruntime Qt6::Core Qt6::Network ${OpenCV_LIBS})
+target_include_directories(CAMEL-Pilot-vision-test PRIVATE ${OpenCV_INCLUDE_DIRS})
+target_compile_definitions(CAMEL-Pilot-vision-test PRIVATE
+    CONFIG_DIR="${DEPLOY_PREFIX}" RBQ_VISION_DIAGNOSTIC=1)

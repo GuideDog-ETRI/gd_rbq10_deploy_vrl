@@ -132,6 +132,13 @@ int main(int argc, char** argv) {
     QCoreApplication::setApplicationName("CAMEL-Pilot");
 
     const Options opt = parseOptions(app);
+#ifdef RBQ_VISION_DIAGNOSTIC
+    if (!opt.sim || opt.iface != "lo" || !opt.peers.isEmpty() || opt.domain != 0 ||
+        opt.ports.tcp != 19100 || opt.ports.beacon != 19101) {
+        std::fprintf(stderr, "vision test refuses non-local/non-simulation configuration\n");
+        return 2;
+    }
+#endif
 
     // 로그 링. 프로세스 간 공유메모리가 아니라 이 프로세스가 힙에 하나 드는 것이다
     // (189 KB). 이렇게 두는 이유는 protocol/ 의 Log.hpp / LogRelay.hpp 를 무수정으로
@@ -168,7 +175,7 @@ int main(int argc, char** argv) {
     // 정책 로드 실패는 치명이 아니다: WALK 가 벤더 경로로 폴백하고 로그에 남는다.
     const WalkConfig walkCfg = WalkConfig::load();
 
-    RlWalker walker(rbq);
+    RlWalker walker(rbq, opt.sim && opt.iface == "lo" && opt.peers.isEmpty());
     if (walkCfg.runsOwnPolicy()) {
         if (walkCfg.policyPath().empty() ||
             !walker.init(walkCfg.policyPath(), walkCfg.payloadKg()))

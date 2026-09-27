@@ -5,6 +5,10 @@
 #include <cmath>
 #include <cstring>
 #include <initializer_list>
+#ifdef RBQ_VISION_DIAGNOSTIC
+#include <cstdlib>
+#include <fstream>
+#endif
 
 #include <onnxruntime_cxx_api.h>
 #include <opencv2/core.hpp>
@@ -26,12 +30,16 @@ int64_t nowMs() {
         .count();
 }
 
+int64_t wallNs() {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+}
+
 // 카메라 데이터가 이 시간보다 오래되면 "무응답"으로 취급한다. 2초 동안
 // 오래된 장면을 계속 정책에 넣으면 카메라가 끊긴 뒤에도 장애물 회피를
 // 시도하는 것처럼 보일 수 있으므로, 학습 카메라 주기(80ms)의 몇 배만
 // 허용한다.
 constexpr int64_t kStaleMs = 250;
-constexpr int64_t kMaxReceiveSkewMs = 50;
 
 // 2026-09-19: 소스 해상도가 kImgW/kImgH와 크기만 다르면 cv::resize가 크래시 없이
 // 알아서 맞춰주지만, 종횡비까지 다르면 그 resize가 화면을 찌그러뜨린다 -- 학습
@@ -57,7 +65,12 @@ bool shapeMatches(const std::vector<int64_t>& actual, std::initializer_list<int6
 
 }  // namespace
 
-VisionStudentThread::VisionStudentThread(const std::string& studentOnnxPath, int updatePeriodMs) {
+VisionStudentThread::VisionStudentThread(const std::string& studentOnnxPath, int updatePeriodMs, int maxReceiveSkewMs)
+    : m_maxReceiveSkewMs(maxReceiveSkewMs) {
+    if (updatePeriodMs <= 0 || maxReceiveSkewMs <= 0 || maxReceiveSkewMs > 150) {
+        FILE_LOG_AS(logERROR, "RLWALK") << "invalid vision polling/skew configuration";
+        return;
+    }
     try {
         m_env = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "camel_vision_student");
         Ort::SessionOptions opts;
@@ -108,6 +121,12 @@ VisionStudentThread::VisionStudentThread(const std::string& studentOnnxPath, int
                 m_cams[i].depthPng.assign(m.data().begin(), m.data().end());
                 m_cams[i].depthStampMs = nowMs();
                 ++m_cams[i].depthVersion;
+                if (m.header().frame_id().find("/capture_sync_v1") != std::string::npos) {
+                    std::lock_guard<std::mutex> captureLock(m_captureMtx);
+                    m_captureContractSeen = true;
+                    const int64_t stamp = int64_t(m.header().stamp().sec()) * 1000000000LL + m.header().stamp().nanosec();
+                    m_captureQueue.push(i * 2, {stamp, m_cams[i].depthStampMs, m_cams[i].depthPng});
+                }
             },
             depthTopic));
         m_subs.push_back(std::make_unique<rbq_sdk::Subscriber<ImageMsg>>(
@@ -116,6 +135,12 @@ VisionStudentThread::VisionStudentThread(const std::string& studentOnnxPath, int
                 m_cams[i].irJpeg.assign(m.data().begin(), m.data().end());
                 m_cams[i].irStampMs = nowMs();
                 ++m_cams[i].irVersion;
+                if (m.header().frame_id().find("/capture_sync_v1") != std::string::npos) {
+                    std::lock_guard<std::mutex> captureLock(m_captureMtx);
+                    m_captureContractSeen = true;
+                    const int64_t stamp = int64_t(m.header().stamp().sec()) * 1000000000LL + m.header().stamp().nanosec();
+                    m_captureQueue.push(i * 2 + 1, {stamp, m_cams[i].irStampMs, m_cams[i].irJpeg});
+                }
             },
             irTopic));
         FILE_LOG_AS(logINFO, "RLWALK") << "vision student subscribing " << depthTopic << ", " << irTopic;
@@ -132,9 +157,13 @@ VisionStudentThread::~VisionStudentThread() {
     if (m_thread.joinable()) m_thread.join();
 }
 
-bool VisionStudentThread::latestLatent(float out[kLatentDim]) const {
+bool VisionStudentThread::latestLatent(float out[kLatentDim], int64_t* ageMs) const {
     std::lock_guard<std::mutex> lock(m_latentMtx);
-    if (!m_haveLatent || nowMs() - m_latentStampMs >= kStaleMs) return false;
+    const int64_t age = m_haveLatent ? nowMs() - m_latentStampMs : -1;
+    if (ageMs) *ageMs = age;
+    // Return the actual last result and its age, including stale results.
+    // The actor decides bounded hold vs fault; never replace the result with zeros.
+    if (!m_haveLatent) return false;
     std::memcpy(out, m_latentOut.data(), sizeof(float) * kLatentDim);
     return true;
 }
@@ -155,7 +184,23 @@ bool VisionStudentThread::preprocessInto(float* frames) {
     };
     std::array<Snapshot, kNumCameras> snapshots;
     int64_t oldest = now, newest = 0;
-    for (int cam = 0; cam < kNumCameras; ++cam) {
+    bool synchronized = false;
+    {
+        std::lock_guard<std::mutex> lock(m_captureMtx);
+        synchronized = m_captureContractSeen;
+        if (synchronized) {
+            CaptureFrameQueue::Batch batch;
+            const auto wall = wallNs();
+            if (!m_captureQueue.take(wall, now, batch)) return false;
+            m_inputStampMs = now - (wall - batch[0].captureNs + 999999) / 1000000;
+            for (int cam = 0; cam < kNumCameras; ++cam) {
+                const auto& d = batch[2 * cam];
+                const auto& ir = batch[2 * cam + 1];
+                snapshots[cam] = {d.bytes, ir.bytes, d.receiveMs, ir.receiveMs, 0, 0};
+            }
+        }
+    }
+    for (int cam = 0; !synchronized && cam < kNumCameras; ++cam) {
         std::lock_guard<std::mutex> lock(m_cams[cam].mtx);
         auto& s = snapshots[cam];
         s = {m_cams[cam].depthPng, m_cams[cam].irJpeg,
@@ -168,7 +213,10 @@ bool VisionStudentThread::preprocessInto(float* frames) {
         newest = std::max(newest, std::max(s.depthStamp, s.irStamp));
     }
     // Arrival-time bound only: source capture synchronization still needs measurement.
-    if (newest - oldest > kMaxReceiveSkewMs) return false;
+    if (!synchronized) {
+        if (newest - oldest > m_maxReceiveSkewMs) return false;
+        m_inputStampMs = oldest;
+    }
     for (int cam = 0; cam < kNumCameras; ++cam) {
         const auto& s = snapshots[cam];
         const auto& depthBytes = s.depth;
@@ -244,7 +292,7 @@ bool VisionStudentThread::preprocessInto(float* frames) {
             }
         }
     }
-    for (int cam = 0; cam < kNumCameras; ++cam) {
+    for (int cam = 0; !synchronized && cam < kNumCameras; ++cam) {
         m_consumedDepth[cam] = snapshots[cam].depthVersion;
         m_consumedIr[cam] = snapshots[cam].irVersion;
     }
@@ -265,6 +313,36 @@ void VisionStudentThread::studentLoop(int updatePeriodMs) {
     // 눈으로 확인할 방법이 없다는 지적 -- 25회(=2s)마다 depth 평균/latent
     // norm을 찍는다. Python 쪽 play_student.py --diag_every 진단과 같은 목적.
     int tick = 0;
+#ifdef RBQ_VISION_DIAGNOSTIC
+    // Never compiled into production. Require exact local simulation arguments.
+    std::ifstream cmdline("/proc/self/cmdline", std::ios::binary);
+    const std::string argv((std::istreambuf_iterator<char>(cmdline)), {});
+    constexpr char requiredArgs[] = "--interface\0lo\0--sim\0--tcp-port\0" "19100\0--beacon-port\0" "19101\0";
+    const std::string required(requiredArgs, sizeof(requiredArgs) - 1);
+    const char* control = std::getenv("RBQ_VISION_TEST_CONTROL");
+    if (control && argv.find(required) == std::string::npos) {
+        FILE_LOG_AS(logERROR, "VISIONTEST") << "injection refused: expected loopback --sim arguments";
+        m_ok.store(false);
+        return;
+    }
+    std::vector<float> flatFrames;
+    std::vector<float> planeFrames;
+    if (const char* planePath = std::getenv("RBQ_VISION_TEST_PLANE")) {
+        if (!control) { m_ok.store(false); return; }
+        planeFrames.resize(frames.size());
+        std::ifstream in(planePath, std::ios::binary);
+        in.read(reinterpret_cast<char*>(planeFrames.data()), planeFrames.size()*sizeof(float));
+        if (!in || in.peek() != std::char_traits<char>::eof() ||
+            !std::all_of(planeFrames.begin(), planeFrames.end(), [](float v) {
+                return std::isfinite(v) && v >= 0 && v <= 1;
+            })) {
+            FILE_LOG_AS(logERROR, "VISIONTEST") << "invalid plane input tensor";
+            m_ok.store(false); return;
+        }
+    }
+    std::string lastMode;
+    int64_t nextReplayMs = 0, modeStartMs = nowMs();
+#endif
     while (!m_shutdown.load(std::memory_order_acquire)) {
         const auto tickStart = std::chrono::steady_clock::now();
 
@@ -272,7 +350,62 @@ void VisionStudentThread::studentLoop(int updatePeriodMs) {
             m_hidden.fill(0.f);
         }
 
-        if (!preprocessInto(frames.data())) {
+        bool haveFrames = false;
+#ifdef RBQ_VISION_DIAGNOSTIC
+        std::string mode = "live";
+        if (control) {
+            std::ifstream in(control);
+            if (!(in >> mode)) mode = "invalid";
+        }
+        if (mode != "live" && mode != "fresh" && mode != "delay" && mode != "drop" &&
+            mode != "plane" && mode != "plane_depth") {
+            std::this_thread::sleep_for(std::chrono::milliseconds(updatePeriodMs));
+            continue;
+        }
+        if (mode != lastMode) {
+            lastMode = mode; modeStartMs = nowMs(); nextReplayMs = 0;
+            FILE_LOG_AS(logWARNING, "VISIONTEST") << "mode=" << mode << " fixed_input=" << !flatFrames.empty();
+        }
+        if (mode == "live") haveFrames = preprocessInto(frames.data());
+        else {
+            const bool synthetic = mode == "plane" || mode == "plane_depth";
+            if (synthetic && planeFrames.empty()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(updatePeriodMs));
+                continue;
+            }
+            // Actual synchronized, preprocessed flat-scene input captured once
+            // in STAND; identical pixels for fresh/delayed/missing conditions.
+            if (flatFrames.empty() && preprocessInto(frames.data())) {
+                flatFrames = frames;
+                if (control) {
+                    std::ofstream snapshot(std::string(control)+".flat.f32", std::ios::binary);
+                    snapshot.write(reinterpret_cast<const char*>(flatFrames.data()), flatFrames.size()*sizeof(float));
+                }
+                FILE_LOG_AS(logWARNING, "VISIONTEST") << "flat snapshot captured from all four cameras";
+            }
+            const int64_t current = nowMs();
+            const bool dropping = mode == "drop" && current - modeStartMs >= 3000;
+            if (!flatFrames.empty() && !dropping && current >= nextReplayMs) {
+                frames = flatFrames;
+                if (synthetic) {
+                    frames = planeFrames;
+                    if (mode == "plane_depth") {
+                        for (int c=0; c<kNumCameras; ++c) {
+                            const size_t offset=(c*2+1)*kImgH*kImgW;
+                            std::copy_n(flatFrames.data()+offset,kImgH*kImgW,frames.data()+offset);
+                        }
+                    }
+                }
+                const int64_t delay = mode == "delay" && current - modeStartMs >= 3000 ? 400 : 0;
+                m_inputStampMs = current - delay;
+                nextReplayMs = current + 80;
+                haveFrames = true;
+            }
+        }
+#else
+        haveFrames = preprocessInto(frames.data());
+#endif
+        if (!haveFrames) {
             std::this_thread::sleep_for(std::chrono::milliseconds(updatePeriodMs));
             continue;
         }
@@ -297,7 +430,9 @@ void VisionStudentThread::studentLoop(int updatePeriodMs) {
             if (m_resetRequested.load(std::memory_order_acquire)) continue;
             std::memcpy(m_latentOut.data(), latent, sizeof(float) * kLatentDim);
             m_haveLatent = true;
-            m_latentStampMs = nowMs();
+            // Age includes acquisition, transport, decoding and inference, not
+            // just time since inference completion. Never freshen an old image.
+            m_latentStampMs = m_inputStampMs;
 
             if (tick % 25 == 0) {
                 double depthMean = 0.0, latentNorm = 0.0;

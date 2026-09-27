@@ -62,7 +62,8 @@ struct RlWalker::Dds {
     MotionRefMsg refMsg;   // 루프 스레드 전용 — arm/whl 은 기본값(0) 그대로 둔다
 };
 
-RlWalker::RlWalker(RbqLink& link) : m_link(link) { m_dds = std::make_unique<Dds>(); }
+RlWalker::RlWalker(RbqLink& link, bool simulationHandoff)
+    : m_link(link), m_simulationHandoff(simulationHandoff) { m_dds = std::make_unique<Dds>(); }
 
 RlWalker::~RlWalker() {
     m_shutdown = true;
@@ -74,6 +75,7 @@ const char* RlWalker::phaseName(Phase p) {
         case Phase::Idle:      return "IDLE";
         case Phase::Handshake: return "HANDSHAKE";
         case Phase::Walk:      return "WALK";
+        case Phase::VisionHold: return "VISION_HOLD";
         case Phase::Damp:      return "DAMP";
         case Phase::Fault:     return "FAULT";
     }
@@ -288,14 +290,39 @@ void RlWalker::tickWalk(const RbqLink::Snapshot& snap, int64_t nowNs) {
         m_cInfers.fetch_add(1, std::memory_order_relaxed);
         if (!m_policy->infer(snap, cmd, m_targetPos)) {
             m_phaseEnterNs = nowNs;
+            if (m_simulationHandoff && m_policy->visionExpired()) {
+                for (int i = 0; i < 12; ++i) m_targetPos[i] = static_cast<float>(snap.pos[i]);
+                m_phase.store(Phase::VisionHold, std::memory_order_release);
+                publishRef(m_targetPos, m_walkKp, m_walkKd);
+                FILE_LOG_AS(logWARNING, "RLWALK") << "VISION_HOLD: sim-only STAND handoff requested (2s bound)";
+                return;
+            }
             m_phase.store(Phase::Damp, std::memory_order_release);
-            FILE_LOG_AS(logERROR, "RLWALK") << "TRIP: policy output NaN";
+            FILE_LOG_AS(logERROR, "RLWALK") << "TRIP: policy inference rejected (see backend error); entering Damp";
             return;
         }
     }
 
     // ref 는 매 틱 (500 Hz). 추론 사이에는 마지막 목표를 hold — 드라이브가 ref
     // 신선도를 검사하므로 (soft input error) 추론 틱에만 내면 안 된다.
+    publishRef(m_targetPos, m_walkKp, m_walkKd);
+}
+
+void RlWalker::tickVisionHold(const RbqLink::Snapshot& snap, int64_t nowNs) {
+    if (safetyTripped(snap, nowNs) || nowNs - m_phaseEnterNs >= 2000000000LL) {
+        m_phaseEnterNs = nowNs;
+        m_phase.store(Phase::Damp, std::memory_order_release);
+        FILE_LOG_AS(logERROR, "RLWALK") << "VISION_HOLD aborted: safety trip or handoff timeout";
+        tickDamp(snap, nowNs);
+        return;
+    }
+    bool owned = false;
+    for (int i = 0; i < 12; ++i) owned |= snap.owner[i] == kProcessId;
+    if (!owned) {
+        m_phase.store(Phase::Idle, std::memory_order_release);
+        return;
+    }
+    // Fixed measured pose, never continue the actor on expired perception.
     publishRef(m_targetPos, m_walkKp, m_walkKd);
 }
 
@@ -375,6 +402,7 @@ void RlWalker::controlLoop() {
         case Phase::Fault:     break;   // 발행 없음
         case Phase::Handshake: tickHandshake(snap, nowNs); break;
         case Phase::Walk:      tickWalk(snap, nowNs);      break;
+        case Phase::VisionHold: tickVisionHold(snap, nowNs); break;
         case Phase::Damp:      tickDamp(snap, nowNs);      break;
         }
     }

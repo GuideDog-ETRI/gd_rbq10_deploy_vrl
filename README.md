@@ -3,6 +3,48 @@
 RBQ10 배포 스택. 보행 궤적과 안전 판정을 Rainbow **QuadWalk** 에 맡기고, 우리는 운용 콘솔과
 그 위임을 담당한다.
 
+## 2026-09-27~28 MuJoCo 비전 RL 시험 인계
+
+현재 시뮬레이션에 적용한 쌍은 **Arm4 teacher `model_3879_top1.pt` + student
+`perception_20000.pt`**이다. 배포 파일은
+`resources/policy/vrl/arm4_teacher3879_student20000/`의 `policy_vrl.onnx`와
+`policy_vrl_student.onnx`이며, 출처·해시·입출력 계약은 같은 폴더의
+`deployment_manifest.json`에 있다. 아래의 teacher3700/student12400 명령은
+이전 쌍을 설명하는 예시이므로, 현재 모델로 실행할 때 파일 경로를 혼용하지 않는다.
+ONNX와 Torch 추론 최대 절대 오차는 actor `9.24e-7`, student `1.79e-7`이었다.
+이 수치는 export 일치성이지 보행 성공률이 아니다.
+
+동기화된 MuJoCo 4카메라의 실제 렌더 입력을 Depth+IR 두 채널로 사용했다.
+여기서 IR은 물리 IR 센서가 아닌 렌더 영상의 grayscale proxy다. 촬영 시각이
+일치하는 8채널만 묶고, 새 영상이 늦으면 기존 latent를 잠시 유지한다.
+250 ms를 넘긴 영상은 fresh로 취급하지 않으며, 장시간 누락은 안전 정지 경로로
+연결된다. 영상 지연/누락 대책과 실제 센서 보정은 아직 실기에서 검증되지 않았다.
+
+| 조건 | 확인 결과 | 해석 범위 |
+|---|---|---|
+| 100 m 평지, 목표 0.18 m/s | 408.74초에 100.01 m 도달; 안전 중단 없음. 관절속도 최대 9.57 rad/s, roll 1.13°, pitch 5.72° | 단일 MuJoCo 시험. 평균 실속도 0.245 m/s로 명령보다 빠름 |
+| 원점 진행 코스 | 폭 5/10/15 cm 갭을 지나 10 cm 계단 입구까지 진행; 계단에서 관절속도 20.24 rad/s로 정지 | 갭의 정확한 발 접촉/학습 `achieved` 판정이나 계단 완주는 아님 |
+| 15 cm × 6단 | 53.91초, 몸통 x=12.670 m에서 RL knee 속도 21.84 rad/s로 ESTOP | 6단 완주 실패. 몸통 위치만으로 특정 단의 네 발 등반 성공을 판정하지 않음 |
+
+영상 경로의 실제 영향은 두 방법으로 분리했다. 계단 접근 시 정상 렌더 영상과
+원점의 실제 영상을 고정 반복한 ABBA 시험은 모두 속도 제한으로 중단됐지만,
+접근 자세와 무릎 목표각에 반복 가능한 차이가 있었다. 동일한
+proprioception/history/previous-action 383개 입력을 고정하고 영상만 교체한
+CPU 반사실 시험에서는 원점 대비 관절 목표각 평균 절대 변화가 Depth+IR
+`0.387°`, Depth만 `0.541°`, IR만 `0.245°`였다. 따라서 영상이 학생 latent를 거쳐
+정책 출력에 영향을 준다는 증거는 있지만, 계단을 정확히 인식하거나 안정적으로
+극복한다는 증거는 아니다. 오프라인 시험은 런타임 GRU 상태를 정확히 재현하지
+않으며, 영상의 촬영 위치도 서로 다르다.
+
+세부 조건·로그·한계: [영상 영향](docs/vision-policy-influence-2026-09-27.md),
+[100 m 평지](docs/flat100-new-model-trial-2026-09-27.md),
+[15 cm 계단](docs/stairs15-six-trial-2026-09-27.md),
+[갭/계단 코스](docs/top1-course-trial-2026-09-27.md),
+[영상 타이밍](docs/vision-timing-experiment-2026-09-27.md).
+10 cm × 6단 지형은 준비했지만 등반은 아직 시험하지 않았다. 9월 28일 오전 확인
+기준 원래 모델 Pilot을 복원했고 시뮬레이터는 **ESTOP 정지**, 실기 명령은 보내지
+않았다. 이 PC의 Arm2 학습도 배포 시험 때문에 중단·재시작하지 않았다.
+
 ## VRL 선생·학생 모델 인계와 MuJoCo 실행 순서
 
 학습은 [gd_lab_vrl](https://github.com/GuideDog-ETRI/gd_lab_vrl)의 Isaac Lab 환경에서 수행한다.

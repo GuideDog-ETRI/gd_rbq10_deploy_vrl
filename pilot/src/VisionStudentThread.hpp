@@ -3,7 +3,7 @@
 // Stage-3 카메라 student(CNN+GRU)를 저속·비동기로 돌리는 전용 스레드.
 //
 // gd_lab/vision_rl의 train_perception.py가 만든 구조를 그대로 실기에 옮긴 것:
-// actor(DreamVrlBackend::infer, 50Hz)는 이 스레드가 마지막으로 계산해 둔
+// actor(DreamVrlBackend::infer, 100Hz)는 이 스레드가 마지막으로 계산해 둔
 // terrain_latent를 매번 논블로킹으로 읽기만 하고, student 자신은 카메라
 // 갱신 주기(학습 때와 동일 0.08s=80ms)로만 돈다 (APT-RL Fig. 2iii의 "actor
 // 고속 / perception 저속 비동기" 구조).
@@ -31,6 +31,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include "CaptureFrameQueue.hpp"
 
 namespace Ort {
 class Env;
@@ -69,7 +70,8 @@ public:
 
     // studentOnnxPath: export_student_vrl.py가 내보낸 <actor_stem>_student.onnx.
     // updatePeriodMs: polling interval; infer only when all depth/IR channels are new.
-    VisionStudentThread(const std::string& studentOnnxPath, int updatePeriodMs);
+    // Alternate receive skew is for read-only timing experiments. Production default stays 50ms.
+    VisionStudentThread(const std::string& studentOnnxPath, int updatePeriodMs, int maxReceiveSkewMs = 50);
     ~VisionStudentThread();
 
     VisionStudentThread(const VisionStudentThread&)            = delete;
@@ -83,10 +85,11 @@ public:
     // 새 에피소드에 섞이지 않는다.
     void resetHidden();
 
-    // 최신 latent를 non-blocking으로 복사한다. 카메라 데이터가 아직 한 번도
-    // 안 들어와서 추론을 못 했으면 false (out 은 안 건드림) -- 호출자가
-    // "student 준비 안 됨"을 스스로 처리한다 (예: 0-벡터로 시작).
-    bool latestLatent(float out[kLatentDim]) const;
+    // Copy the last result and its input age (capture time for marked simulator
+    // frames, oldest receive time for legacy cameras) under one lock.
+    // false / age=-1 means no result since reset. Caller must enforce timeout.
+    // Uses a mutex, so this is not a lock-free API.
+    bool latestLatent(float out[kLatentDim], int64_t* ageMs = nullptr) const;
 
 private:
     struct CameraSlot {
@@ -107,6 +110,11 @@ private:
     std::unique_ptr<Ort::Session> m_session;
 
     std::array<CameraSlot, kNumCameras> m_cams;
+    int m_maxReceiveSkewMs = 50;
+    std::mutex m_captureMtx;
+    CaptureFrameQueue m_captureQueue;
+    bool m_captureContractSeen = false;
+    int64_t m_inputStampMs = 0;  // oldest source time expressed in monotonic clock
     std::vector<std::unique_ptr<rbq_sdk::Subscriber<sensor_msgs::msg::dds_::CompressedImage_>>> m_subs;
 
     // 2026-09-19: 소스 해상도가 kImgW/kImgH와 다르면 자동 리사이즈하는데(크래시

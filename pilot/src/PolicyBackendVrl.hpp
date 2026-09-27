@@ -34,6 +34,8 @@ public:
     void reset(const RbqLink::Snapshot& snap) override;
     bool infer(const RbqLink::Snapshot& snap, const float cmd[3], float targetPos[12]) override;
     std::string describe() const override;
+    bool visionExpired() const override;
+    bool readyForWalk() const override;
 
 private:
     struct Impl;
