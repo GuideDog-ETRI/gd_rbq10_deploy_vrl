@@ -132,10 +132,10 @@ int main(int argc, char** argv) {
     QCoreApplication::setApplicationName("CAMEL-Pilot");
 
     const Options opt = parseOptions(app);
-#ifdef RBQ_VISION_DIAGNOSTIC
+#if defined(RBQ_VISION_DIAGNOSTIC) || defined(RBQ_ARM2_GAIN_DIAGNOSTIC)
     if (!opt.sim || opt.iface != "lo" || !opt.peers.isEmpty() || opt.domain != 0 ||
         opt.ports.tcp != 19100 || opt.ports.beacon != 19101) {
-        std::fprintf(stderr, "vision test refuses non-local/non-simulation configuration\n");
+        std::fprintf(stderr, "diagnostic refuses non-local/non-simulation configuration\n");
         return 2;
     }
 #endif
