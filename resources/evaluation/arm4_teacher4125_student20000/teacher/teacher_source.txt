@@ -1,1 +1,0 @@
-source_run=2026-09-27_08-04-53_arm4_3gpu_top5_gap8_resume_model3700\ncheckpoint=best_top5/4125_top2.pt\niteration=4125\nscore=0.8710629383649846\n
