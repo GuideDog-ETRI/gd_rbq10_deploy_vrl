@@ -39,8 +39,14 @@ Eigen::Vector3d projectedGravity(const RbqLink::Snapshot& snap) {
     return q.toRotationMatrix().transpose() * Eigen::Vector3d(0, 0, -1);
 }
 
+#ifdef RBQ_ARM2_GAIN_DIAGNOSTIC
+// Simulation-only Arm4 policy / Arm2 actuator-gain diagnostic. Never in production.
+constexpr float kDreamKp[3] = {88.1367f, 88.1367f, 102.2177f};
+constexpr float kDreamKd[3] = {1.9919f, 1.9919f, 1.9932f};
+#else
 constexpr float kDreamKp[3] = {123.39f, 123.39f, 127.77f};
 constexpr float kDreamKd[3] = {2.4f, 2.4f, 2.4f};  // Arm4 training gains
+#endif
 constexpr float kOffsetOnnx[12] = {0.0f, 0.0f, 0.0f, 0.0f,
                                    0.76f, 0.76f, 0.76f, 0.76f,
                                    -1.45f, -1.45f, -1.45f, -1.45f};

@@ -22,7 +22,8 @@ def verify_sim():
         try:
             args = p.read_bytes().split(b"\0")
             allowed = [bytes(str(ROOT / "build/pilot" / name), "utf-8")
-                       for name in ("CAMEL-Pilot", "CAMEL-Pilot-vision-test")]
+                       for name in ("CAMEL-Pilot", "CAMEL-Pilot-vision-test",
+                                    "CAMEL-Pilot-arm2-gain-test")]
             if args[0] not in allowed:
                 continue
             expected = [b"--interface", b"lo", b"--sim", b"--tcp-port", b"19100", b"--beacon-port", b"19101"]
@@ -154,7 +155,7 @@ def main():
                     for name, offset, count in (("cmd", 16, 3), ("rpy", 80, 3),
                                                 ("gyro", 104, 3), ("acc", 128, 3), ("q", 152, 12),
                                                 ("qd", 248, 12), ("tau", 344, 12),
-                                                ("ref", 536, 12), ("kp", 824, 12)):
+                                                ("ref", 536, 12), ("kp", 824, 12), ("kd", 920, 12)):
                         row[name] = struct.unpack_from(f"<{count}d", p, offset)
                     row["owner"] = struct.unpack_from("<12i", p, 1112)
                     rows.append(row)

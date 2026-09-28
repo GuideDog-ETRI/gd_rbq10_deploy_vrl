@@ -57,3 +57,11 @@ target_link_libraries(CAMEL-Pilot-vision-test PRIVATE wire rbq_sdk::rbq_sdk
 target_include_directories(CAMEL-Pilot-vision-test PRIVATE ${OpenCV_INCLUDE_DIRS})
 target_compile_definitions(CAMEL-Pilot-vision-test PRIVATE
     CONFIG_DIR="${DEPLOY_PREFIX}" RBQ_VISION_DIAGNOSTIC=1)
+
+# Separate simulation-only binary: same Arm4 policy, Arm2 actuator gains.
+add_executable(CAMEL-Pilot-arm2-gain-test EXCLUDE_FROM_ALL ${VISION_TEST_SOURCES})
+target_link_libraries(CAMEL-Pilot-arm2-gain-test PRIVATE wire rbq_sdk::rbq_sdk
+    onnxruntime::onnxruntime Qt6::Core Qt6::Network ${OpenCV_LIBS})
+target_include_directories(CAMEL-Pilot-arm2-gain-test PRIVATE ${OpenCV_INCLUDE_DIRS})
+target_compile_definitions(CAMEL-Pilot-arm2-gain-test PRIVATE
+    CONFIG_DIR="${DEPLOY_PREFIX}" RBQ_ARM2_GAIN_DIAGNOSTIC=1)
