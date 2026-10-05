@@ -52,8 +52,13 @@ def main():
     contract = saved['camera_contract']
     if contract['frame_shape'] != [1,4,2,45,80] or contract['policy_dt'] != .01:
         raise RuntimeError('unsupported camera contract')
+    if contract.get('profile') not in ('vendor_new', 'vendor_legacy'):
+        raise RuntimeError(f"unknown camera profile {contract.get('profile')!r}")
+    if architecture == 'grid_attention_v1' and saved['student_config'].get('camera_profile') != contract['profile']:
+        raise RuntimeError('student_config camera_profile differs from the camera contract')
     jit, onnx = export_policy_vrl(policy,str(a.out),[t.dim for t in DREAMWAQ_SPEC.policy.terms],32)
-    student_jit, student_onnx = export_student_vrl(camera,onnx)
+    # Records camel.camera_profile in the ONNX (checked again by the deploy runtime).
+    student_jit, student_onnx = export_student_vrl(camera,onnx,camera_profile=contract['profile'])
     opts = ort.SessionOptions(); opts.intra_op_num_threads = opts.inter_op_num_threads = 1
     rng = np.random.default_rng(42); checks = {}
     for jp,op in ((jit,onnx),(student_jit,student_onnx)):

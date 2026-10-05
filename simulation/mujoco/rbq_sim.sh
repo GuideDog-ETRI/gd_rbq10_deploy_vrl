@@ -35,8 +35,12 @@
 # (cmd_exec_app 주석 참조).
 #
 # 벤더 스택(RBQ_DIR)은 이 리포에 없다 — 벤더가 주는 배포본을 그대로 마운트한다.
-# 아래 후보를 순서대로 찾아보고, 없으면:
-#   RBQ_DIR=/path/to/RBQ bash simulation/mujoco/rbq_sim.sh build
+# 기본값은 승인된 RBQ SDK 한 곳($HOME/gd_project/RBQ_vendor_new/RBQ-nightly)뿐이고,
+# 다른 위치는 RBQ_DIR=/path/to/RBQ 로 직접 준다. 후보를 훑어 고르지 않는다 (2026-10-05:
+# 예전 후보 목록의 마지막이 카메라가 90도 틀어진 2026-08-29 nightly 였다).
+# 카메라 검사 (check_camera_calibration.py): up 은 SDK 와 생성한 payload 를, mujoco 는
+# 컨테이너에 실제로 마운트된 SDK 와 로봇 모델을 확인한다. 승인되지 않은 SDK, legacy
+# 카메라(GD_LAB_ALLOW_LEGACY_CAMERA=1 없이), SDK 와 다른 카메라를 가진 모델은 거부한다.
 #
 # DDS 인터페이스 기본은 lo — 시뮬은 한 대에서 전부 돌리는 게 기본 구성이다.
 # CAMEL-Pilot 이 다른 PC 에 있을 때만 지정한다:
@@ -48,15 +52,8 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# 지정이 없으면 흔한 자리를 훑는다. bin/ 이 있는 첫 후보가 이긴다 — 사람마다
-# 벤더 배포본을 두는 자리가 달라서, 한 곳을 기본값으로 박으면 남의 기계에서 틀린다.
-RBQ_DIR_CANDIDATES=("$HOME/RBQ" "$HOME/Codes/RBQ" "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/RBQ" "$HOME/gd_project/RBQ_vendor/RBQ-nightly")
-if [ -z "${RBQ_DIR:-}" ]; then
-    for _c in "${RBQ_DIR_CANDIDATES[@]}"; do
-        [ -d "${_c}/bin" ] && RBQ_DIR="${_c}" && break
-    done
-    RBQ_DIR="${RBQ_DIR:-${RBQ_DIR_CANDIDATES[0]}}"
-fi
+RBQ_DIR="${RBQ_DIR:-$HOME/gd_project/RBQ_vendor_new/RBQ-nightly}"
+CAMERA_CHECK="${SCRIPT_DIR}/check_camera_calibration.py"
 IMAGE_TAG="${IMAGE_TAG:-rbq-sim:22.04}"
 CONTAINER="${CONTAINER:-rbq-sim}"
 TERRAIN_DIR="${RBQ_SIM_TERRAIN_DIR:-}"
@@ -70,13 +67,47 @@ if ! docker info >/dev/null 2>&1; then
     DOCKER="sudo -E docker"
 fi
 
-if [ ! -d "$RBQ_DIR/bin" ]; then
-    echo "ERROR: 벤더 스택(bin/ 이 있는 RBQ 배포본)을 찾지 못했습니다."
-    echo "찾아본 곳:"
-    for _c in "${RBQ_DIR_CANDIDATES[@]}"; do echo "  $_c"; done
-    echo "RBQ_DIR=/path/to/RBQ 로 지정하세요."
-    exit 1
-fi
+# 정리용 명령(stop/down/shell/build/도움말)은 벤더 스택이 없거나 거부돼도 동작해야 한다.
+case "${1:-}" in
+    up|check|motion|mujoco|gui)
+        if [ ! -d "$RBQ_DIR/bin" ]; then
+            echo "ERROR: 벤더 스택(bin/ 이 있는 RBQ 배포본)이 없습니다: ${RBQ_DIR}"
+            echo "RBQ_DIR=/path/to/RBQ 로 지정하세요."
+            exit 1
+        fi ;;
+esac
+
+# 카메라 검사: 실패하면 아무 부작용(xhost, 컨테이너, 앱 실행) 없이 끝낸다.
+camera_check() {
+    python3 "${CAMERA_CHECK}" "$@" >/dev/null || {
+        echo "ERROR: camera check refused (${CAMERA_CHECK} $*)" >&2
+        exit 2
+    }
+}
+
+# 컨테이너에 실제로 마운트된 SDK 와, MuJoCo 가 읽을 로봇 모델(payload 또는 벤더 rbq.xml)을 검사한다.
+camera_check_container() {
+    local rbq_src env_src terrain_src include model
+    rbq_src="$(${DOCKER} inspect --format '{{range .Mounts}}{{if eq .Destination "/workspace/RBQ"}}{{.Source}}{{end}}{{end}}' "${CONTAINER}" 2>/dev/null)"
+    if [ -z "${rbq_src}" ]; then
+        echo "ERROR: ${CONTAINER} has no /workspace/RBQ mount; run: rbq_sim.sh up" >&2
+        exit 2
+    fi
+    if [ "$(realpath "${rbq_src}")" != "$(realpath "${RBQ_DIR}")" ]; then
+        echo "ERROR: ${CONTAINER} mounts ${rbq_src}, not RBQ_DIR=${RBQ_DIR}; rbq_sim.sh down && rbq_sim.sh up" >&2
+        exit 2
+    fi
+    env_src="$(${DOCKER} inspect --format '{{range .Mounts}}{{if eq .Destination "/workspace/RBQ/resources/model/rbq_environment.xml"}}{{.Source}}{{end}}{{end}}' "${CONTAINER}")"
+    terrain_src="$(${DOCKER} inspect --format '{{range .Mounts}}{{if eq .Destination "/workspace/RBQ/resources/model/env/vrl_progression"}}{{.Source}}{{end}}{{end}}' "${CONTAINER}")"
+    [ -n "${env_src}" ] || env_src="${rbq_src}/resources/model/rbq_environment.xml"
+    include="$(grep -o 'include file="[^"]*"' "${env_src}" | sed 's/include file="\(.*\)"/\1/' | grep -E '(^|/)rbq(_payload)?\.xml$' | head -1)"
+    case "${include}" in
+        env/vrl_progression/*) model="${terrain_src}/${include#env/vrl_progression/}" ;;
+        "") echo "ERROR: ${env_src} includes no rbq.xml / rbq_payload.xml" >&2; exit 2 ;;
+        *) model="${rbq_src}/resources/model/${include}" ;;
+    esac
+    camera_check model --rbq-dir "${RBQ_DIR}" --model-xml "${model}"
+}
 
 cmd_build() {
     echo "=== RBQ sim 이미지 빌드 (${IMAGE_TAG}) ==="
@@ -89,10 +120,12 @@ cmd_build() {
 }
 
 cmd_up() {
+    camera_check sdk --rbq-dir "${RBQ_DIR}"
     # Rebuild from the untouched vendor model on every launch (never accumulate mass).
+    # prepare_payload.py verifies the written cameras before it replaces the old file.
     if [ -n "${TERRAIN_DIR}" ] && grep -q 'rbq_payload.xml' "${TERRAIN_DIR}/rbq_environment.xml"; then
         python3 "${SCRIPT_DIR}/prepare_payload.py" "${RBQ_DIR}" \
-            "${TERRAIN_DIR}/rbq_payload.xml" --mass "${RBQ_PAYLOAD_KG:-6}"
+            "${TERRAIN_DIR}/rbq_payload.xml" --mass "${RBQ_PAYLOAD_KG:-6}" || exit 2
     fi
     # X 접근 허용은 컨테이너 생성 여부와 무관하게 매번 해야 한다.
     # xhost 항목은 X 세션이 끝나면 사라지므로, 재부팅/재로그인 후 기존 컨테이너를
@@ -108,20 +141,22 @@ cmd_up() {
     xhost +SI:localuser:root >/dev/null 2>&1 || true
 
     if ${DOCKER} ps -a --format '{{.Names}}' | grep -qx "${CONTAINER}"; then
-        if [ -n "${TERRAIN_DIR}" ]; then
-            local mounted_terrain expected_terrain state backup_name
-            mounted_terrain="$(${DOCKER} inspect --format '{{range .Mounts}}{{if eq .Destination "/workspace/RBQ/resources/model/rbq_environment.xml"}}{{.Source}}{{end}}{{end}}' "${CONTAINER}")"
-            expected_terrain="$(realpath "${TERRAIN_DIR}/rbq_environment.xml")"
-            if [ "$mounted_terrain" != "$expected_terrain" ]; then
+        local mounted_terrain expected_terrain mounted_rbq state backup_name
+        mounted_terrain="$(${DOCKER} inspect --format '{{range .Mounts}}{{if eq .Destination "/workspace/RBQ/resources/model/rbq_environment.xml"}}{{.Source}}{{end}}{{end}}' "${CONTAINER}")"
+        mounted_rbq="$(${DOCKER} inspect --format '{{range .Mounts}}{{if eq .Destination "/workspace/RBQ"}}{{.Source}}{{end}}{{end}}' "${CONTAINER}")"
+        expected_terrain=""
+        [ -n "${TERRAIN_DIR}" ] && expected_terrain="$(realpath "${TERRAIN_DIR}/rbq_environment.xml")"
+        # A container keeps the SDK it was created with: reuse it only with the same RBQ_DIR and terrain.
+        if [ "$(realpath "${mounted_rbq:-/nonexistent}" 2>/dev/null)" != "$(realpath "${RBQ_DIR}")" ] ||
+           [ "$mounted_terrain" != "$expected_terrain" ]; then
                 state="$(${DOCKER} inspect --format '{{.State.Status}}' "${CONTAINER}")"
                 if [ "$state" != exited ] && [ "$state" != created ]; then
-                    echo "ERROR: ${CONTAINER} uses another terrain mount; stop its owning simulation first." >&2
+                    echo "ERROR: ${CONTAINER} uses another SDK or terrain mount; stop its owning simulation first." >&2
                     return 1
                 fi
                 backup_name="${CONTAINER}-old-mount-$(date +%Y%m%d%H%M%S)"
                 ${DOCKER} rename "${CONTAINER}" "$backup_name"
-                echo "[info] preserved stopped container as $backup_name; rebuilding terrain mounts."
-            fi
+                echo "[info] preserved stopped container as $backup_name; rebuilding SDK/terrain mounts."
         fi
     fi
     if ${DOCKER} ps -a --format '{{.Names}}' | grep -qx "${CONTAINER}"; then
@@ -371,7 +406,8 @@ case "${1:-}" in
     # it exactly via docker/tools/resize_win, removing the leftover 1/3 border
     # (a plain XResizeWindow does not trigger Xephyr's resize-and-renegotiate
     # RandR path, so this does not change what Mujoco already rendered at).
-    mujoco) VISION_ARG="--vision"
+    mujoco) camera_check_container
+            VISION_ARG="--vision"
             MUJOCO_APP=Mujoco
             [ "${RBQ_SIM_SYNC_VISION:-0}" = "1" ] && MUJOCO_APP=MujocoVrlSync
             MUJOCO_MODEL_ARG=""

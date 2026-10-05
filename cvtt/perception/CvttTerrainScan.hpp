@@ -2,7 +2,8 @@
 
 // Simulation-only CVTT v2 terrain observation. The frozen teacher consumes
 // [camera-visible height(11x17), camera-visible validity(11x17)]. The scanner
-// grid and projection reproduce the saved CVTT-7761 training contract.
+// grid and projection reproduce the saved CVTT-7761 training contract; the camera
+// mounts and pinhole come from the model's CameraProfile (vendor_new/vendor_legacy).
 
 #include <algorithm>
 #include <array>
@@ -14,6 +15,8 @@
 #include <string>
 #include <vector>
 
+#include "../../perception/common/CameraProfile.hpp"
+
 class CvttTerrainScan {
 public:
     static constexpr int kPoints = 187;
@@ -23,7 +26,7 @@ public:
     struct Pose { Vec pos; Quat quat; };
     struct Box { Vec pos; Vec half; };
 
-    explicit CvttTerrainScan(const std::string& xmlPath) {
+    CvttTerrainScan(const std::string& xmlPath, const CameraProfile& cameras) : m_cameras(cameras) {
         std::ifstream file(xmlPath);
         if (!file) throw std::runtime_error("CVTT terrain XML cannot be opened: " + xmlPath);
         const std::string xml((std::istreambuf_iterator<char>(file)), {});
@@ -72,13 +75,13 @@ public:
                 const Vec point{wx, wy, z};
                 bool visible = false;
                 for (int camera = 0; camera < 4; ++camera) {
-                    const Vec cameraPos = add(body.pos, rotate(bodyQuat, kMountPositions[camera]));
-                    const Quat ros = multiply(multiply(bodyQuat, normalized(kMountQuats[camera])), {0, 1, 0, 0});
+                    const Vec cameraPos = add(body.pos, rotate(bodyQuat, m_cameras.mountPositions[camera]));
+                    const Quat ros = multiply(multiply(bodyQuat, normalized(m_cameras.mountQuats[camera])), {0, 1, 0, 0});
                     const Vec optical = rotate(conjugate(ros), sub(point, cameraPos));
                     const float depth = optical[2];
                     if (!std::isfinite(depth) || depth < .15f || depth >= 5.f) continue;
-                    const int x = static_cast<int>(std::floor(42.15124215f * optical[0] / depth + 40.f));
-                    const int y = static_cast<int>(std::floor(40.59169938f * optical[1] / depth + 22.5f));
+                    const int x = static_cast<int>(std::floor(m_cameras.fx * optical[0] / depth + 40.f));
+                    const int y = static_cast<int>(std::floor(m_cameras.fy * optical[1] / depth + 22.5f));
                     if (x < 0 || x + 1 >= kWidth || y < 0 || y + 1 >= kHeight) continue;
                     const float* pixels = normalizedCameraFrames + camera * 2 * kWidth * kHeight;
                     bool match = true;
@@ -140,13 +143,6 @@ private:
         return std::atan2(2 * (q[0]*q[3] + q[1]*q[2]),
                           1 - 2 * (q[2]*q[2] + q[3]*q[3]));
     }
-    static constexpr std::array<Vec, 4> kMountPositions{{
-        { .36462f, 0, -.02663f }, { .26053f, 0, -.04759f },
-        { -.19515f, .0065f, -.04832f }, { -.352990f, -.000011f, -.020510f }
-    }};
-    static constexpr std::array<Quat, 4> kMountQuats{{
-        {0, .8191608f, 0, -.5735639f}, {0, -.6156417f, 0, .7880262f},
-        {0, -.7071046f, 0, .7071090f}, {.4993997f, .0263259f, .8647709f, -.0455865f}
-    }};
+    CameraProfile m_cameras;
     std::vector<Box> m_boxes;
 };

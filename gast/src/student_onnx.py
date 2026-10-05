@@ -12,7 +12,7 @@ class GastStudent(GridAttentionStudent):
     gru_hidden_dim = 187*32 + 4*32 + 4
     age_slot = None
 
-    def __init__(self, camera_profile='vendor_legacy'):
+    def __init__(self, camera_profile='vendor_new'):
         super().__init__(camera_profile, dim=32)
         # Replace legacy pooled memory; each terrain cell retains its own memory.
         del self.fuse, self.gru, self.head, self.spatial_head

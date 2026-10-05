@@ -1,8 +1,13 @@
 """Generate a vendor-preserving MJCF overlay with an Isaac-style point payload."""
 import argparse
 import math
+import os
 from pathlib import Path
+import sys
+import tempfile
 import xml.etree.ElementTree as ET
+
+from check_camera_calibration import CameraContractError, check_model, sdk_profile
 
 
 def main():
@@ -15,6 +20,10 @@ def main():
         parser.error("payload mass must be finite and nonnegative")
     vendor = args.vendor.resolve()
     source = vendor / "resources/model/rbq/rbq.xml"
+    try:
+        profile = sdk_profile(vendor)  # approved SDK; legacy only with GD_LAB_ALLOW_LEGACY_CAMERA=1
+    except CameraContractError as exc:
+        sys.exit(f"CAMERA CONTRACT REFUSED: {exc}")
     tree = ET.parse(source)
     inertial = tree.find(".//body[@name='base_link']/inertial")
     if inertial is None or "fullinertia" not in inertial.attrib:
@@ -45,9 +54,22 @@ def main():
                 raise FileNotFoundError(asset)
             relative = asset.relative_to(vendor)
             element.set("file", str(Path("/workspace/RBQ") / relative))
+    # Write next to the target, verify the cameras actually written, then replace atomically:
+    # a refused or failed run leaves any previous payload untouched.
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    tree.write(args.output, encoding="utf-8", xml_declaration=True)
-    print(f"[payload] +{args.mass:g} kg at {payload_pos}; base mass={total:g} kg; COM={new_com}")
+    handle, temporary = tempfile.mkstemp(prefix=f".{args.output.name}.", suffix=".tmp", dir=args.output.parent)
+    os.close(handle)
+    try:
+        tree.write(temporary, encoding="utf-8", xml_declaration=True)
+        check_model(vendor, Path(temporary))
+        os.chmod(temporary, 0o644)
+        os.replace(temporary, args.output)
+    except CameraContractError as exc:
+        sys.exit(f"CAMERA CONTRACT REFUSED: {exc}")
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+    print(f"[payload] +{args.mass:g} kg at {payload_pos}; base mass={total:g} kg; COM={new_com}; cameras={profile}")
 
 
 if __name__ == "__main__":

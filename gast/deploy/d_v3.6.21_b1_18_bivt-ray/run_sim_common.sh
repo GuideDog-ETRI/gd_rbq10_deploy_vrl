@@ -13,7 +13,13 @@ case "$variant" in
     label="d_v3.6.21_b1_18_bivt-ray-gast-20000" ;;
   *) echo "Unknown student iteration: $variant" >&2; exit 2 ;;
 esac
-export RBQ_DIR=/home/user/gd_project/RBQ_vendor/RBQ-nightly
+# These GAST students were trained with the legacy 2026-08-29 cameras (manifest camera_contract=vendor_legacy),
+# so they replay only on that legacy SDK with GD_LAB_ALLOW_LEGACY_CAMERA=1; run_sim_vrl.sh refuses any other pair.
+export RBQ_DIR="${RBQ_DIR:-/home/user/gd_project/RBQ_vendor/RBQ-nightly}"
+camera_pair() {
+  python3 "$repo/simulation/mujoco/check_camera_calibration.py" pair --rbq-dir "$RBQ_DIR" \
+    --policy "$repo/gast/runtime/resources/policy/$RBQ_POLICY_FILE" >/dev/null
+}
 export RBQ_POLICY_FILE="$resource/policy_vrl.onnx"
 export RBQ_SIM_VISION=1 RBQ_SIM_SYNC_VISION=1 RBQ_PAYLOAD_KG=6 RBQ_WALK=ours
 export RBQ_HEALTH=1 RBQ_VRL_HISTORY_INIT=repeat_first
@@ -24,6 +30,7 @@ case "$action" in
   --check)
     test -x "$repo/gast/runtime/build/pilot/CAMEL-Pilot"
     test -x "$RBQ_DIR/bin/MujocoGastSync"
+    camera_pair
     exec python3 "$repo/gast/tools/check_gast_deploy_bundle.py" "$resource" --expected-iteration "$variant" ;;
   stop)
     exec bash "$here/stop_sim.sh" "$variant" ;;
@@ -32,6 +39,7 @@ case "$action" in
 esac
 
 python3 "$repo/gast/tools/check_gast_deploy_bundle.py" "$resource" --expected-iteration "$variant"
+camera_pair  # before the ownership marker below: a refused pair must not leave a stale marker
 if [[ -f "$repo/gast/runtime/logs/owned-launch" ]]; then
   echo "A GAST-owned simulator marker already exists; refusing to replace it." >&2
   exit 1
