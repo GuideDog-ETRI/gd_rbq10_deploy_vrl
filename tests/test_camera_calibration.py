@@ -371,6 +371,7 @@ class Launchers(unittest.TestCase):
                 reuse = text.split("재사용합니다.", 1)[1].split("TERRAIN_MOUNTS=()", 1)[0]
                 self.assertIn("mounts_live", reuse)
                 self.assertIn("stale-mount", reuse)
+                self.assertIn("return 0", reuse)  # live reuse must succeed (a bare return gave status 1)
                 mujoco = text.split("camera_check_container() {", 1)[1].split("\n}\n", 1)[0]
                 self.assertIn('cmp -s - "${model}"', mujoco)
 
