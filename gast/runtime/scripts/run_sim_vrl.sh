@@ -43,6 +43,12 @@ VRL_TERRAIN_DIR="${RBQ_SIM_TERRAIN_DIR:-$(cd "${REPO_DIR}/../.." && pwd)/simulat
 SIM_CONTAINER="${SIM_CONTAINER:-rbq-sim-vrl}"
 SIM_WINDOW_ROLE="rbq10-sim-vrl"
 source "$SCRIPT_DIR/sim_windows.sh"
+# 승인된 RBQ SDK 하나만 기본값이다 (simulation/mujoco/rbq_sim.sh 와 같은 값). 탭 스크립트에도 그대로 넘긴다.
+export RBQ_DIR="${RBQ_DIR:-$HOME/gd_project/RBQ_vendor_new/RBQ-nightly}"
+CAMERA_CHECK="${REPO_DIR}/simulation/mujoco/check_camera_calibration.py"
+camera_pair() {  # <policy.onnx> <encoder.onnx> -> prints the simulator camera profile, or refuses
+    python3 "$CAMERA_CHECK" pair --policy "$1" --encoder "$2" --rbq-dir "$RBQ_DIR"
+}
 
 if [[ "${1:-}" == --check ]]; then
     policy="${RBQ_POLICY_FILE:-rvld/arm4_teacher5674_student20000_env128/policy_vrl.onnx}"
@@ -51,6 +57,7 @@ if [[ "${1:-}" == --check ]]; then
     test -f "$policy" && test -f "$encoder" || {
         echo "Missing actor/student pair: $policy" >&2; exit 1;
     }
+    camera_pair "$policy" "$encoder" >/dev/null || exit 2
     exec "$BUILD_DIR/tools/policy-check" "$policy"
 fi
 
@@ -89,15 +96,6 @@ if ! command -v gnome-terminal >/dev/null 2>&1; then
     exit 1
 fi
 
-# ---- 빌드 -------------------------------------------------------------------
-if [ ! -f "${BUILD_DIR}/CMakeCache.txt" ]; then
-    echo "Error: ${BUILD_DIR} is not configured." >&2
-    echo "       cmake -B build -S . -DCMAKE_BUILD_TYPE=Release" >&2
-    exit 1
-fi
-echo "[run_sim_vrl] building..."
-cmake --build "${BUILD_DIR}" -j"${RBQ_BUILD_JOBS:-4}"
-
 # ---- vRL 정책 존재 확인 --------------------------------------------------------
 # resources/policy/vrl/ 안에 .onnx 가 없으면 여기서 바로 끊는다 -- Pilot 이
 # 대신 조용히 벤더 폴백(vendor)으로 빠지는 것보다, "아직 export된 RL 정책이
@@ -120,6 +118,26 @@ if [ -z "${RBQ_POLICY_FILE:-}" ]; then
     echo "[run_sim_vrl] RBQ_POLICY_FILE not set -- defaulting to latest: ${RBQ_POLICY_FILE}"
 fi
 
+# ---- 카메라 계약 (빌드·정리·컨테이너보다 먼저) ---------------------------------
+# 정책이 학습한 카메라(manifest 의 camera_contract)와 RBQ_DIR SDK 의 카메라가 같아야
+# 한다. legacy 정책은 legacy SDK 에서 GD_LAB_ALLOW_LEGACY_CAMERA=1 일 때만 돈다.
+# 통과한 프로파일을 Pilot 에 RBQ_CAMERA_PROFILE 로 넘긴다 (ONNX 의 camel.camera_profile 과 대조).
+policy_path="${RBQ_POLICY_FILE}"
+[[ "$policy_path" = /* ]] || policy_path="${REPO_DIR}/resources/policy/${policy_path}"
+encoder_path="${RBQ_CVTT_TEACHER_ENCODER:-${policy_path%.onnx}_student.onnx}"
+RBQ_CAMERA_PROFILE="$(camera_pair "$policy_path" "$encoder_path")" || exit 2
+export RBQ_CAMERA_PROFILE
+echo "[run_sim_vrl] cameras: ${RBQ_CAMERA_PROFILE} (RBQ_DIR=${RBQ_DIR})"
+
+# ---- 빌드 -------------------------------------------------------------------
+if [ ! -f "${BUILD_DIR}/CMakeCache.txt" ]; then
+    echo "Error: ${BUILD_DIR} is not configured." >&2
+    echo "       cmake -B build -S . -DCMAKE_BUILD_TYPE=Release" >&2
+    exit 1
+fi
+echo "[run_sim_vrl] building..."
+cmake --build "${BUILD_DIR}" -j"${RBQ_BUILD_JOBS:-4}"
+
 # ---- 이전 실행 정리 ----------------------------------------------------------
 pkill -f '^pilot-sim-vrl-watchdog' 2>/dev/null || true
 for name in CAMEL-Console CAMEL-Pilot vision-viewer; do
@@ -139,7 +157,7 @@ pkill -KILL -x vision-viewer   2>/dev/null || true
 
 # ---- 컨테이너 ----------------------------------------------------------------
 echo "[run_sim_vrl] container up..."
-CONTAINER="${SIM_CONTAINER}" RBQ_SIM_TERRAIN_DIR="${VRL_TERRAIN_DIR}" IFACE=lo bash "${REPO_DIR}/simulation/mujoco/rbq_sim.sh" up
+CONTAINER="${SIM_CONTAINER}" RBQ_SIM_TERRAIN_DIR="${VRL_TERRAIN_DIR}" IFACE=lo bash "${REPO_DIR}/simulation/mujoco/rbq_sim.sh" up || exit 2
 
 mkdir -p "${REPO_DIR}/logs"
 
@@ -150,7 +168,7 @@ TAB_DIR="$(mktemp -d -t pilot-run-vrl-XXXXXX)"
 
 cat > "${TAB_DIR}/motion.sh" <<EOF
 #!/bin/bash
-CONTAINER='${SIM_CONTAINER}' IFACE=lo bash '${REPO_DIR}/simulation/mujoco/rbq_sim.sh' motion
+RBQ_DIR='${RBQ_DIR}' CONTAINER='${SIM_CONTAINER}' IFACE=lo bash '${REPO_DIR}/simulation/mujoco/rbq_sim.sh' motion
 EOF
 
 cat > "${TAB_DIR}/mujoco.sh" <<EOF
@@ -166,7 +184,7 @@ else
     # MujocoVrlSync occasionally exits right after launch; retry a quick exit.
     for attempt in 1 2 3; do
         started=\$(date +%s)
-        CONTAINER='${SIM_CONTAINER}' RBQ_SIM_SYNC_VISION='${RBQ_SIM_SYNC_VISION}' RBQ_SIM_VISION=${RBQ_SIM_VISION} IFACE=lo bash '${REPO_DIR}/simulation/mujoco/rbq_sim.sh' mujoco
+        RBQ_DIR='${RBQ_DIR}' GD_LAB_ALLOW_LEGACY_CAMERA='${GD_LAB_ALLOW_LEGACY_CAMERA:-}' CONTAINER='${SIM_CONTAINER}' RBQ_SIM_SYNC_VISION='${RBQ_SIM_SYNC_VISION}' RBQ_SIM_VISION=${RBQ_SIM_VISION} IFACE=lo bash '${REPO_DIR}/simulation/mujoco/rbq_sim.sh' mujoco
         [ \$(( \$(date +%s) - started )) -ge 20 ] && break
         echo "[run_sim_vrl] MuJoCo exited within 20s (attempt \${attempt}/3) -- restarting..."
         sleep 2
@@ -185,6 +203,8 @@ export RBQ_BAVRL_SIM_ONLY='${RBQ_BAVRL_SIM_ONLY:-0}'
 export RBQ_CVTT_TEACHER_ENCODER='${RBQ_CVTT_TEACHER_ENCODER:-}'
 export RBQ_CVTT_TERRAIN_XML='${RBQ_CVTT_TERRAIN_XML:-}'
 export RBQ_VRL_HISTORY_INIT='${RBQ_VRL_HISTORY_INIT}'
+export RBQ_CAMERA_PROFILE='${RBQ_CAMERA_PROFILE}'
+export GD_LAB_ALLOW_LEGACY_CAMERA='${GD_LAB_ALLOW_LEGACY_CAMERA:-}'
 export RBQ_WALK='${RBQ_WALK:-ours}'
 export RBQ_PAYLOAD_KG='${RBQ_PAYLOAD_KG:-6}'
 export RBQ_HEALTH='${RBQ_HEALTH:-1}'

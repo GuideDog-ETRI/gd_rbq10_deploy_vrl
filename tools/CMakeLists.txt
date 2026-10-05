@@ -90,6 +90,8 @@ include_directories(${CMAKE_SOURCE_DIR}/perception/common)
 
 add_executable(student-age-contract-test ${CMAKE_SOURCE_DIR}/tests/student_age_contract_test.cpp)
 target_compile_options(student-age-contract-test PRIVATE -UNDEBUG)
+add_executable(camera-profile-test ${CMAKE_SOURCE_DIR}/tests/camera_profile_test.cpp)
+target_compile_options(camera-profile-test PRIVATE -UNDEBUG)
 
 include_directories(${CMAKE_SOURCE_DIR}/bavrl/src ${CMAKE_SOURCE_DIR}/pilot/src)
 

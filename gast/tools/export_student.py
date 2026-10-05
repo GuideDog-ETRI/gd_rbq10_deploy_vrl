@@ -3,6 +3,7 @@ import sys, json, hashlib, math
 from pathlib import Path
 import torch
 import numpy as np
+import onnx
 import onnxruntime as ort
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -26,8 +27,13 @@ def main():
     assert c['iteration']==20000 and c['student_arch']=='gast_spatiotemporal_v1'
     assert sha(teacher)==c['teacher_sha256']==expected
     assert c['gast_contract']['hidden_dim']==6116
+    # The ray/mount buffers are baked into the ONNX: export only the calibration the student learned.
+    profile=(c.get('camera_contract') or {}).get('profile')
+    assert profile in ('vendor_new','vendor_legacy'), 'checkpoint has no known camera_contract profile'
+    assert c['student_config'].get('camera_profile')==profile, 'student_config camera_profile != camera_contract'
     ref=Reference(**c['student_config']).eval(); model=Export(**c['student_config']).eval()
     ref.load_state_dict(c['model'],strict=True);model.load_state_dict(c['model'],strict=True)
+    model.verify_camera_geometry()  # loaded rays/mounts == the named profile
     frames=torch.rand(1,4,2,45,80); hidden=torch.zeros(1,6116)
     pose=torch.tensor([[0.,0.,0.,1.,0.,0.,0.]])
     args=(frames,hidden,pose,torch.zeros(1),torch.ones(1))
@@ -35,6 +41,9 @@ def main():
     torch.onnx.export(model,args,str(target),opset_version=17,dynamo=False,
         input_names=['frames','hidden','pose_xy_yaw_wxyz','age_seconds','available'],
         output_names=['terrain_latent','hidden_out'])
+    graph=onnx.load(str(target))
+    onnx.helper.set_model_props(graph,{'camel.camera_profile':profile})
+    onnx.save(graph,str(target))
     session=ort.InferenceSession(str(target),providers=['CPUExecutionProvider'])
     h_ref=torch.zeros(1,6116);h_ort=h_ref.numpy(); rows=[]
     cases=[('normal',0.,1.),('move',.04,1.),('rotate',.08,1.),('missing',.05,0.),
