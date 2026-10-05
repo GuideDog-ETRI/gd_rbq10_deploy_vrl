@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mujoco model="RBQ targeted 10cm gap at 1m">
+  <include file="rbq_payload.xml"/>
+  <include file="environment.xml"/>
+</mujoco>

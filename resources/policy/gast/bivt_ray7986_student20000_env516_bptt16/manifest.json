@@ -1,0 +1,207 @@
+{
+  "status": "offline_parity_passed_simulation_ready_NOT_smoke_tested",
+  "iteration": 20000,
+  "teacher_sha256": "718517b53038384211b5a5d4282061ce0c5830695a1f6f26ba0caf8d07111fda",
+  "checkpoint_sha256": "72aa24d7166acef2325b421e97ca4e90c54c98329751e48f6d470eb6403c2125",
+  "onnx_sha256": "81df62d394efd1277e5b7be37c94e63e087dd5e5da2139d2261b969313f837b9",
+  "hidden_dim": 6116,
+  "pose": "capture-time world xy/yaw/WXYZ",
+  "camera_contract": {
+    "profile": "vendor_legacy",
+    "positions": [
+      [
+        0.36462,
+        0,
+        -0.02663
+      ],
+      [
+        0.26053,
+        0,
+        -0.04759
+      ],
+      [
+        -0.19515,
+        0.0065,
+        -0.04832
+      ],
+      [
+        -0.35299,
+        -1.1e-05,
+        -0.02051
+      ]
+    ],
+    "quaternions_opengl": [
+      [
+        0,
+        0.8191608,
+        0,
+        -0.5735639
+      ],
+      [
+        0,
+        -0.6156417,
+        0,
+        0.7880262
+      ],
+      [
+        0,
+        -0.7071046,
+        0,
+        0.707109
+      ],
+      [
+        0.4993997,
+        0.0263259,
+        0.8647709,
+        -0.0455865
+      ]
+    ],
+    "sensor_size_m": [
+      0.003663,
+      0.0021396
+    ],
+    "focal_m": 0.00193,
+    "width": 80,
+    "height": 45,
+    "source_resolution": [
+      640,
+      360
+    ],
+    "depth_clip": [
+      0.15,
+      5.0
+    ],
+    "period_steps": 8,
+    "policy_dt": 0.01,
+    "render_height": 48,
+    "schema_version": 1,
+    "terrain_observation_version": 2,
+    "camera_names": [
+      "front_depth_camera0",
+      "front_depth_camera1",
+      "hind_depth_camera2",
+      "hind_depth_camera3"
+    ],
+    "channels": [
+      "depth",
+      "ir_proxy"
+    ],
+    "depth_semantics": "optical_axis_metres",
+    "quaternion_order": "wxyz",
+    "fov_degrees": [
+      86.99994958511454,
+      57.999251984409135
+    ],
+    "fx": 42.15124215124215,
+    "fy": 40.59169938306225,
+    "cx": 40.0,
+    "cy": 22.5,
+    "frame_shape": [
+      1,
+      4,
+      2,
+      45,
+      80
+    ]
+  },
+  "tests": [
+    {
+      "case": "normal",
+      "max_abs_error": 4.76837158203125e-07
+    },
+    {
+      "case": "move",
+      "max_abs_error": 2.86102294921875e-06
+    },
+    {
+      "case": "rotate",
+      "max_abs_error": 2.86102294921875e-06
+    },
+    {
+      "case": "missing",
+      "max_abs_error": 2.86102294921875e-06
+    },
+    {
+      "case": "stale",
+      "max_abs_error": 2.86102294921875e-06
+    },
+    {
+      "case": "old",
+      "max_abs_error": 1.430511474609375e-06
+    },
+    {
+      "case": "reset",
+      "max_abs_error": 9.5367431640625e-07
+    },
+    {
+      "case": "normal",
+      "max_abs_error": 9.5367431640625e-07
+    },
+    {
+      "case": "move",
+      "max_abs_error": 9.5367431640625e-07
+    },
+    {
+      "case": "rotate",
+      "max_abs_error": 9.5367431640625e-07
+    },
+    {
+      "case": "missing",
+      "max_abs_error": 9.5367431640625e-07
+    },
+    {
+      "case": "stale",
+      "max_abs_error": 9.5367431640625e-07
+    },
+    {
+      "case": "old",
+      "max_abs_error": 1.1324882507324219e-06
+    },
+    {
+      "case": "reset",
+      "max_abs_error": 4.76837158203125e-07
+    },
+    {
+      "case": "normal",
+      "max_abs_error": 9.5367431640625e-07
+    },
+    {
+      "case": "move",
+      "max_abs_error": 9.5367431640625e-07
+    },
+    {
+      "case": "rotate",
+      "max_abs_error": 9.685754776000977e-07
+    },
+    {
+      "case": "missing",
+      "max_abs_error": 9.5367431640625e-07
+    },
+    {
+      "case": "stale",
+      "max_abs_error": 1.2367963790893555e-06
+    },
+    {
+      "case": "old",
+      "max_abs_error": 9.5367431640625e-07
+    },
+    {
+      "case": "reset",
+      "max_abs_error": 9.5367431640625e-07
+    }
+  ],
+  "limitations": [
+    "No 7986 MuJoCo smoke or terrain success evaluation yet",
+    "Simulator ground-truth capture pose; not real odometry",
+    "Loopback simulation only"
+  ],
+  "teacher_iteration": 7986,
+  "actor_cenet_exact_teacher_weights": true,
+  "actor_max_abs_error": 5.364418029785156e-06,
+  "deployment_hashes": {
+    "/home/user/gd_project/gd_rbq10_deploy_vrl/resources/policy/gast/bivt_ray7986_student20000_env516_bptt16/policy_vrl.onnx": "d8ea6dcc07565df18a5da0d06b116b298ed06705049b521a6072cc5296932278",
+    "/home/user/gd_project/gd_rbq10_deploy_vrl/resources/policy/gast/bivt_ray7986_student20000_env516_bptt16/policy_vrl_student.onnx": "81df62d394efd1277e5b7be37c94e63e087dd5e5da2139d2261b969313f837b9",
+    "/home/user/gd_project/gd_rbq10_deploy_vrl/gast/runtime/build/pilot/CAMEL-Pilot": "6aa426c1ec449a75fbe67db4f8eff2a3b80da8880eeeb0070abe8715cb514227",
+    "/home/user/gd_project/RBQ_vendor/RBQ-nightly/bin/MujocoGastSync": "222e7907069e8eabb5c6a18778f53e1885d27ac44140cf5f173dca83486556ad"
+  }
+}

@@ -1,0 +1,305 @@
+{
+  "schema_version": 1,
+  "robot": "RBQ10",
+  "policy_dt": 0.01,
+  "joint_names": [
+    "FL_HIP",
+    "FR_HIP",
+    "HL_HIP",
+    "HR_HIP",
+    "FL_THIGH",
+    "FR_THIGH",
+    "HL_THIGH",
+    "HR_THIGH",
+    "FL_KNEE",
+    "FR_KNEE",
+    "HL_KNEE",
+    "HR_KNEE"
+  ],
+  "default_joint_pos": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.76,
+    0.76,
+    0.76,
+    0.76,
+    -1.45,
+    -1.45,
+    -1.45,
+    -1.45
+  ],
+  "history_initialization": "zeros",
+  "terms": [
+    {
+      "name": "base_ang_vel",
+      "source": "angular_velocity",
+      "size": 3,
+      "history": 5,
+      "transforms": [
+        {
+          "op": "scale",
+          "values": [
+            0.25,
+            0.25,
+            0.25
+          ]
+        }
+      ]
+    },
+    {
+      "name": "projected_gravity",
+      "source": "gravity",
+      "size": 3,
+      "history": 5,
+      "transforms": [
+        {
+          "op": "scale",
+          "values": [
+            1,
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "name": "velocity_commands",
+      "source": "command",
+      "size": 3,
+      "history": 5,
+      "transforms": [
+        {
+          "op": "scale",
+          "values": [
+            2,
+            2,
+            0.25
+          ]
+        }
+      ]
+    },
+    {
+      "name": "joint_pos",
+      "source": "joint_position_rel",
+      "size": 12,
+      "history": 5,
+      "transforms": [
+        {
+          "op": "scale",
+          "values": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "name": "joint_vel",
+      "source": "joint_velocity",
+      "size": 12,
+      "history": 5,
+      "transforms": [
+        {
+          "op": "scale",
+          "values": [
+            0.05,
+            0.05,
+            0.05,
+            0.05,
+            0.05,
+            0.05,
+            0.05,
+            0.05,
+            0.05,
+            0.05,
+            0.05,
+            0.05
+          ]
+        }
+      ]
+    },
+    {
+      "name": "actions",
+      "source": "previous_action",
+      "size": 12,
+      "history": 5,
+      "transforms": [
+        {
+          "op": "scale",
+          "values": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "name": "payload",
+      "source": "payload",
+      "size": 1,
+      "history": 5,
+      "transforms": [
+        {
+          "op": "scale",
+          "values": [
+            0.2
+          ]
+        }
+      ]
+    }
+  ],
+  "action": {
+    "type": "joint_position",
+    "scale": [
+      0.25,
+      0.25,
+      0.25,
+      0.25,
+      0.25,
+      0.25,
+      0.25,
+      0.25,
+      0.25,
+      0.25,
+      0.25,
+      0.25
+    ],
+    "offset": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.76,
+      0.76,
+      0.76,
+      0.76,
+      -1.45,
+      -1.45,
+      -1.45,
+      -1.45
+    ],
+    "clip": [
+      -5,
+      5
+    ],
+    "previous_action": "clipped",
+    "gains": {
+      "kp": [
+        123.39,
+        123.39,
+        123.39,
+        123.39,
+        123.39,
+        123.39,
+        123.39,
+        123.39,
+        127.77,
+        127.77,
+        127.77,
+        127.77
+      ],
+      "kd": [
+        2.5,
+        2.5,
+        2.5,
+        2.5,
+        2.5,
+        2.5,
+        2.5,
+        2.5,
+        2.5,
+        2.5,
+        2.5,
+        2.5
+      ]
+    }
+  },
+  "provenance": {
+    "source": "gd_rbq10_deploy PolicyBackend DreamBackend constants",
+    "model_sha256": "119edd6dd9beb6d16a09efa20b865442cf00b8086c494dedcf14589701d8fe49"
+  },
+  "inputs": [
+    {
+      "name": "direct_obs",
+      "shape": [
+        1,
+        46
+      ],
+      "dtype": "float32",
+      "role": "observation",
+      "layout": "latest",
+      "terms": [
+        "base_ang_vel",
+        "projected_gravity",
+        "velocity_commands",
+        "joint_pos",
+        "joint_vel",
+        "actions",
+        "payload"
+      ]
+    },
+    {
+      "name": "cenet_obs",
+      "shape": [
+        1,
+        230
+      ],
+      "dtype": "float32",
+      "role": "observation",
+      "layout": "step_major",
+      "terms": [
+        "base_ang_vel",
+        "projected_gravity",
+        "velocity_commands",
+        "joint_pos",
+        "joint_vel",
+        "actions",
+        "payload"
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "name": "actions",
+      "shape": [
+        1,
+        12
+      ],
+      "dtype": "float32",
+      "role": "action"
+    },
+    {
+      "name": "z_t",
+      "shape": [
+        1,
+        19
+      ],
+      "dtype": "float32",
+      "role": "auxiliary"
+    }
+  ],
+  "states": [],
+  "normalization": "in_graph"
+}

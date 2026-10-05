@@ -1,0 +1,13 @@
+{
+  "teacher_sha256": "718517b53038384211b5a5d4282061ce0c5830695a1f6f26ba0caf8d07111fda",
+  "actor_same_as_student": true,
+  "actor_sha256": "d8ea6dcc07565df18a5da0d06b116b298ed06705049b521a6072cc5296932278",
+  "encoder_sha256": "f38cdaf43d0fd1ab8df000ac759279653090f3da063af3e3688280ca3e3bfa77",
+  "encoder_parity_max_error": 6.377696990966797e-06,
+  "scan": "full finite 187 cells, 5*clip(body_z-height-0.5,-1,1), y-major/x-minor",
+  "limitations": [
+    "full mask differs from teacher training camera visibility",
+    "geometry from common course XML only",
+    "simulation only"
+  ]
+}

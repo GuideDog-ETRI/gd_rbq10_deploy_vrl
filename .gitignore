@@ -8,5 +8,5 @@ compile_commands.json
 *.user
 logs/
 .idea/
-docker/terrain/vrl_progression/rbq_payload.xml
+simulation/terrains/vrl_progression/rbq_payload.xml
 __pycache__/

@@ -15,10 +15,10 @@ find_package(Qt6 REQUIRED COMPONENTS Core)   # PolicyRuntime 의 QJson
 add_executable(sim-state-probe src/sim_state_probe.cpp)
 target_link_libraries(sim-state-probe PRIVATE rbq_sdk::rbq_sdk)
 
-add_executable(vision-latent-gate-test src/vision_latent_gate_test.cpp)
+add_executable(vision-latent-gate-test ${CMAKE_SOURCE_DIR}/tests/vision_latent_gate_test.cpp)
 target_include_directories(vision-latent-gate-test PRIVATE ${CMAKE_SOURCE_DIR}/pilot/src)
 target_compile_options(vision-latent-gate-test PRIVATE -UNDEBUG)
-add_executable(capture-frame-queue-test src/capture_frame_queue_test.cpp)
+add_executable(capture-frame-queue-test ${CMAKE_SOURCE_DIR}/tests/capture_frame_queue_test.cpp)
 target_include_directories(capture-frame-queue-test PRIVATE ${CMAKE_SOURCE_DIR}/pilot/src)
 target_compile_options(capture-frame-queue-test PRIVATE -UNDEBUG)
 
@@ -30,8 +30,10 @@ add_executable(policy-check
     src/policy_check.cpp
     ${CMAKE_SOURCE_DIR}/pilot/src/PolicyBackend.cpp
     ${CMAKE_SOURCE_DIR}/pilot/src/PolicyRuntime.cpp
-    ${CMAKE_SOURCE_DIR}/pilot/src/PolicyBackendVrl.cpp
-    ${CMAKE_SOURCE_DIR}/pilot/src/VisionStudentThread.cpp
+    ${CMAKE_SOURCE_DIR}/perception/common/PolicyBackendVrl.cpp
+    ${CMAKE_SOURCE_DIR}/bavrl/src/BavrlBackend.cpp
+    ${CMAKE_SOURCE_DIR}/dwb/src/DwbBackend.cpp
+    ${CMAKE_SOURCE_DIR}/perception/common/VisionStudentThread.cpp
 )
 target_include_directories(policy-check PRIVATE ${CMAKE_SOURCE_DIR}/pilot/src ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(policy-check PRIVATE
@@ -48,8 +50,10 @@ add_executable(policy-smoke
     src/policy_smoke.cpp
     ${CMAKE_SOURCE_DIR}/pilot/src/PolicyBackend.cpp
     ${CMAKE_SOURCE_DIR}/pilot/src/PolicyRuntime.cpp
-    ${CMAKE_SOURCE_DIR}/pilot/src/PolicyBackendVrl.cpp
-    ${CMAKE_SOURCE_DIR}/pilot/src/VisionStudentThread.cpp
+    ${CMAKE_SOURCE_DIR}/perception/common/PolicyBackendVrl.cpp
+    ${CMAKE_SOURCE_DIR}/bavrl/src/BavrlBackend.cpp
+    ${CMAKE_SOURCE_DIR}/dwb/src/DwbBackend.cpp
+    ${CMAKE_SOURCE_DIR}/perception/common/VisionStudentThread.cpp
 )
 target_include_directories(policy-smoke PRIVATE ${CMAKE_SOURCE_DIR}/pilot/src ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(policy-smoke PRIVATE
@@ -69,12 +73,24 @@ target_link_libraries(vision-timing-probe PRIVATE rbq_sdk::rbq_sdk)
 
 # Read-only A/B: production decoder + student inference, no actor or command publisher.
 add_executable(vision-student-probe src/vision_student_probe.cpp
-    ${CMAKE_SOURCE_DIR}/pilot/src/VisionStudentThread.cpp)
+    ${CMAKE_SOURCE_DIR}/perception/common/VisionStudentThread.cpp)
 target_include_directories(vision-student-probe PRIVATE ${CMAKE_SOURCE_DIR}/pilot/src ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(vision-student-probe PRIVATE wire rbq_sdk::rbq_sdk
     onnxruntime::onnxruntime ${OpenCV_LIBS})
 
-# vision-viewer — 같은 토픽을 계속 구독하며 BT0-3 depth 를 2x2 로 타일링해 띄운다.
-add_executable(vision-viewer src/vision_viewer.cpp)
+# vision-viewer — student 입력과 같은 4-camera Depth+IR 텐서를 표시한다.
+add_executable(vision-viewer src/student_input_viewer.cpp)
+add_executable(vision-record src/vision_record.cpp)
+target_link_libraries(vision-record PRIVATE rbq_sdk::rbq_sdk ${OpenCV_LIBS})
+target_include_directories(vision-record PRIVATE ${CMAKE_SOURCE_DIR}/pilot/src ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(vision-viewer PRIVATE rbq_sdk::rbq_sdk ${OpenCV_LIBS})
-target_include_directories(vision-viewer PRIVATE ${OpenCV_INCLUDE_DIRS})
+target_include_directories(vision-viewer PRIVATE ${CMAKE_SOURCE_DIR}/pilot/src ${OpenCV_INCLUDE_DIRS})
+
+include_directories(${CMAKE_SOURCE_DIR}/perception/common)
+
+add_executable(student-age-contract-test ${CMAKE_SOURCE_DIR}/tests/student_age_contract_test.cpp)
+target_compile_options(student-age-contract-test PRIVATE -UNDEBUG)
+
+include_directories(${CMAKE_SOURCE_DIR}/bavrl/src ${CMAKE_SOURCE_DIR}/pilot/src)
+
+include_directories(${CMAKE_SOURCE_DIR}/dwb/src)

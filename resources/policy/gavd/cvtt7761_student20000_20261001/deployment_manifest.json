@@ -1,0 +1,115 @@
+{
+  "teacher_iteration": 7761,
+  "student_iteration": 20000,
+  "student_arch": "grid_attention_v1",
+  "teacher_sha256": "f7c010331a5a3dac7b2b6c0e78c9678c49fdbb5661cb9f0265ba62b1fd9e0c87",
+  "student_sha256": "b2c3e108342b6ff5daeae03eb6b402ace794263fa204f7058e8318e8e6af931f",
+  "camera_contract": {
+    "profile": "vendor_legacy",
+    "positions": [
+      [
+        0.36462,
+        0,
+        -0.02663
+      ],
+      [
+        0.26053,
+        0,
+        -0.04759
+      ],
+      [
+        -0.19515,
+        0.0065,
+        -0.04832
+      ],
+      [
+        -0.35299,
+        -1.1e-05,
+        -0.02051
+      ]
+    ],
+    "quaternions_opengl": [
+      [
+        0,
+        0.8191608,
+        0,
+        -0.5735639
+      ],
+      [
+        0,
+        -0.6156417,
+        0,
+        0.7880262
+      ],
+      [
+        0,
+        -0.7071046,
+        0,
+        0.707109
+      ],
+      [
+        0.4993997,
+        0.0263259,
+        0.8647709,
+        -0.0455865
+      ]
+    ],
+    "sensor_size_m": [
+      0.003663,
+      0.0021396
+    ],
+    "focal_m": 0.00193,
+    "width": 80,
+    "height": 45,
+    "source_resolution": [
+      640,
+      360
+    ],
+    "depth_clip": [
+      0.15,
+      5.0
+    ],
+    "period_steps": 8,
+    "policy_dt": 0.01,
+    "render_height": 48,
+    "schema_version": 1,
+    "terrain_observation_version": 2,
+    "camera_names": [
+      "front_depth_camera0",
+      "front_depth_camera1",
+      "hind_depth_camera2",
+      "hind_depth_camera3"
+    ],
+    "channels": [
+      "depth",
+      "ir_proxy"
+    ],
+    "depth_semantics": "optical_axis_metres",
+    "quaternion_order": "wxyz",
+    "fov_degrees": [
+      86.99994958511454,
+      57.999251984409135
+    ],
+    "fx": 42.15124215124215,
+    "fy": 40.59169938306225,
+    "cx": 40.0,
+    "cy": 22.5,
+    "frame_shape": [
+      1,
+      4,
+      2,
+      45,
+      80
+    ]
+  },
+  "parity_max_abs_errors": {
+    "policy_vrl": 2.0265579223632812e-06,
+    "policy_vrl_student": 2.980232238769531e-07
+  },
+  "files_sha256": {
+    "policy_vrl.onnx": "8908992199948c9e65892faafa4d0d009a12d41212cd179f3813680e121d207e",
+    "policy_vrl_student.onnx": "fcf2fa8f17eb30b21e1acf005a2dac6c0e22328759d4ce0625ae152fbd872e68"
+  },
+  "resume_from": null,
+  "mujoco_walking_validated": false
+}

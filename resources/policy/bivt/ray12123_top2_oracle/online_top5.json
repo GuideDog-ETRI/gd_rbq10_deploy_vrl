@@ -1,0 +1,10 @@
+{
+  "top5_min_spacing": 100,
+  "min_platform_gap_mean_level": 8.0,
+  "min_terrain_mean_level": 9.0,
+  "max_base_contact_rate": 0.09,
+  "max_platform_gap_termination_rate": 0.09,
+  "max_stairs_termination_rate": 0.09,
+  "max_gap_success_regression": 0.02,
+  "max_base_contact_regression": 0.01
+}

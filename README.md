@@ -5,10 +5,34 @@ RBQ10 배포 스택. 보행 궤적과 안전 판정을 Rainbow **QuadWalk** 에 
 
 ## 서버 역할과 GitHub 동기화 기준
 
+학습 약칭은 DWB(블라인드 기준), CVTT(가시 지형 교사), BIVT(블라인드 초기화 교사),
+RVLD(CNN–GRU 증류), GAVD(격자 Attention 증류), BAVRL(고정 블라인드 + 영상 잔차)입니다.
+교사와 학생은 조합으로 기록합니다: `CVTT-6987 + GAVD`, `CVTT-5674 + RVLD`.
+모델 폴더의 개별 이름과 manifest는 보존하고 상위 경로를 약어 기준으로 분리했습니다.
+
+| 디렉토리 | 기본 모델/역할 | 실행 |
+| --- | --- | --- |
+| `dwb/` | 기존 블라인드 `d_v3.6.21_b1_18` | `bash dwb/run_sim.sh` |
+| `rvld/` | CVTT-5674 + RVLD-20000 | `bash rvld/run_sim.sh` |
+| `gavd/` | CVTT-6987 + GAVD-20000 | `bash gavd/run_sim.sh` |
+| `bavrl/` | DWB-38000 + BAVRL-150 중간 모델 | `bash bavrl/run_sim.sh` |
+| `cvtt/` | 교사 계열 및 RVLD/GAVD 연결 안내 | 직접 실행 없음 |
+| `bivt/` | BIVT 교사 연결 상태 안내; 학생 배포 쌍 아직 없음 | 직접 실행 없음 |
+
+모델은 `resources/policy/{dwb,rvld,gavd,bavrl}/`에 있습니다.
+공통 카메라/비전 추론은 `perception/common/`이며 제어·안전·vendor/metadata backend는 `pilot/`에 유지합니다.
+옛 실행기 `scripts/run_sim_arm4.sh`, `scripts/run_sim_attention6987.sh`는 각각 RVLD/GAVD 실행기로 이동했습니다.
+아래 과거 기록의 옛 경로는 [이동표](docs/method-layout-migration.json)를 참고하세요.
+
 | 역할 | 서버 | 작업 기준 |
 |---|---|---|
-| 학습 main | `10.77.32.231` | Vision RL 학습 코드·학습 결과의 기준 서버 |
-| 배포 main | `10.254.90.20` (RTX 5090, 이 저장소가 있는 PC) | MuJoCo 시뮬레이터 확인과 배포 실험 코드 실행·검증 |
+| 렌더링 교사 학습 | `10.77.32.231` | 기존 4카메라 렌더링 기반 비전 교사 학습 |
+| 학습·배포 겸용 | `10.254.90.20` (RTX 5090) | 학생·신규 학습 및 MuJoCo 검증 |
+
+현재 디렉터리 구성은 [구조 안내](docs/layout.md)를 따른다. 공통 시험 진입점은
+`scripts/run_sim_vrl.sh`이다. 명시적 요청 없이 학습·배포 리포를 push하지 않는다.
+
+### 이전 운영 기록 (현재 역할은 위 표 기준)
 
 배포 실험은 **배포 main 서버에서** 수행한다. 이 PC에서 실행 중인 Arm2 학습이
 있더라도 학습 코드의 기준 서버가 이 PC로 바뀌는 것은 아니다. GitHub pull·push
@@ -52,11 +76,11 @@ CPU 반사실 시험에서는 원점 대비 관절 목표각 평균 절대 변�
 극복한다는 증거는 아니다. 오프라인 시험은 런타임 GRU 상태를 정확히 재현하지
 않으며, 영상의 촬영 위치도 서로 다르다.
 
-세부 조건·로그·한계: [영상 영향](docs/vision-policy-influence-2026-09-27.md),
-[100 m 평지](docs/flat100-new-model-trial-2026-09-27.md),
-[15 cm 계단](docs/stairs15-six-trial-2026-09-27.md),
-[갭/계단 코스](docs/top1-course-trial-2026-09-27.md),
-[영상 타이밍](docs/vision-timing-experiment-2026-09-27.md).
+세부 조건·로그·한계: [영상 영향](docs/experiments/vision-policy-influence-2026-09-27.md),
+[100 m 평지](docs/experiments/flat100-new-model-trial-2026-09-27.md),
+[15 cm 계단](docs/experiments/stairs15-six-trial-2026-09-27.md),
+[갭/계단 코스](docs/experiments/top1-course-trial-2026-09-27.md),
+[영상 타이밍](docs/experiments/vision-timing-experiment-2026-09-27.md).
 10 cm × 6단 지형은 준비했지만 등반은 아직 시험하지 않았다. 9월 28일 오전 확인
 기준 원래 모델 Pilot을 복원했고 시뮬레이터는 **ESTOP 정지**, 실기 명령은 보내지
 않았다. 이 PC의 Arm2 학습도 배포 시험 때문에 중단·재시작하지 않았다.
@@ -72,7 +96,7 @@ ONNX 두 파일 export → 이 저장소로 복사 → 재빌드 → MuJoCo 평�
 | 선생 `model_3700.pt` | 고정된 선생으로 사용. 해당 실행의 `params/agent.yaml`, `params/env.yaml`도 보관 |
 | 학생 `perception_N.pt` | 선생의 지형 latent를 카메라로 추정하도록 증류하고 보행 평가로 저장본 선택 |
 | `policy_vrl.onnx` | 같은 선생에서 `scripts/export_vrl.py`로 생성한 actor·CENet |
-| `policy_vrl_student.onnx` | 선택한 학생에서 `scripts/export_student_vrl.py`로 생성한 인코더 |
+| `policy_vrl_student.onnx` | 선택한 학생에서 `scripts/export_student.py`로 생성한 인코더 |
 
 두 export 스크립트는 **학습 저장소**에 있다. 선생/학생 학습 PT를 Pilot에 직접 로드하지 않는다.
 학생이 학습한 선생과 다른 actor를 조합하면 latent 의미가 달라질 수 있다.
@@ -84,7 +108,7 @@ ONNX 두 파일 export → 이 저장소로 복사 → 재빌드 → MuJoCo 평�
 
 ```bash
 python scripts/export_vrl.py /teacher-run/model_3700.pt --out exported/arm4_teacher3700
-python scripts/export_student_vrl.py /student-run/perception_20000.pt \
+python scripts/export_student.py /student-run/perception_20000.pt \
   --actor-onnx exported/arm4_teacher3700/policy_vrl.onnx
 ```
 
@@ -127,8 +151,8 @@ resources/policy/vrl/arm4_teacher3700/
 export RBQ_DIR=/absolute/path/to/RBQ
 cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j4
-bash docker/rbq_sim.sh build
-bash docker/rbq_sim.sh check
+bash simulation/mujoco/rbq_sim.sh build
+bash simulation/mujoco/rbq_sim.sh check
 ```
 
 ### 4. 새 모델을 명시해서 MuJoCo 실행
@@ -215,12 +239,12 @@ rbq_sdk·CycloneDDS·onnxruntime 은 `extern/` 에 벤더링돼 있어 따로 �
 
 ```bash
 cmake -B build -S . -DCMAKE_BUILD_TYPE=Release   # 최초 한 번 — 이후 빌드는 run_sim.sh 가 한다
-bash docker/rbq_sim.sh build              # 이미지 (한 번만)
-bash docker/rbq_sim.sh check              # 바이너리 의존성 — 실행 전 필수
+bash simulation/mujoco/rbq_sim.sh build              # 이미지 (한 번만)
+bash simulation/mujoco/rbq_sim.sh check              # 바이너리 의존성 — 실행 전 필수
 ```
 
 Mujoco 렌더링에 `nvidia-container-toolkit` 이 필요하다. 호스트에서 한 번:
-`sudo bash docker/setup_nvidia_runtime.sh`
+`sudo bash simulation/mujoco/setup_nvidia_runtime.sh`
 
 ### 실행
 
@@ -378,3 +402,19 @@ RBQ_WALK=ours RBQ_POLICY_FILE=vrl/arm4_teacher3700/policy_vrl.onnx \
 | `configs/walk.env` | WALK 세 모드 |
 | `configs/hosts.env` | 랩 토폴로지 |
 | `extern/rbq_sdk/example/README.md` | 벤더 obs 계약의 원문이 어디인가 |
+
+2026-09-30: [현재 배포 모델의 실제 Depth+IR 및 계단·갭 영상 영향 비교](docs/experiments/terrain-vision-check-2026-09-30.md).
+# BAVRL 전용 배포
+
+고정 블라인드 + 시각 잔차 배포는 [`bavrl/`](bavrl/README.md)에 분리했습니다.
+실행은 `bash bavrl/run_sim.sh`이며 모델은 `resources/policy/bavrl/`에 있습니다.
+현재 선택 모델은 150회 초기 학습 스냅샷으로 MuJoCo 전용입니다.
+# 진단 카메라 표시 방향 (2026-10-01)
+
+MuJoCo 비전 배포의 공통 `vision-viewer`는 BT0~BT3의 IR·Depth와
+미관측 마스크를 **시계 방향 90도** 회전해서 표시합니다.
+RVLD, GAVD, BAVRL(1,000/9,750/20,000회 포함)은 공통
+`scripts/run_sim_vrl.sh` 뷰어를 사용하므로 동일하게 적용됩니다.
+앞으로 추가하는 비전 배포도 공통 실행기와 뷰어를 사용해야 합니다.
+이 변경은 표시 전용입니다. 정책 입력·카메라 좌표·학습 전처리는 바꾸지 않습니다.
+실행 중인 창은 재실행해야 반영됩니다. 참고용 구형 depth 뷰어도 같은 방향입니다.

@@ -38,15 +38,31 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BUILD_DIR="${BUILD_DIR:-${REPO_DIR}/build}"
-VRL_POLICY_DIR="${REPO_DIR}/resources/policy/vrl"
-VRL_TERRAIN_DIR="${REPO_DIR}/docker/terrain/vrl_progression"
+VRL_POLICY_DIR="${REPO_DIR}/resources/policy/rvld/legacy_unversioned"
+VRL_TERRAIN_DIR="${REPO_DIR}/simulation/terrains/vrl_progression"
 SIM_CONTAINER="${SIM_CONTAINER:-rbq-sim-vrl}"
+SIM_WINDOW_ROLE="rbq10-sim-vrl"
+source "$SCRIPT_DIR/sim_windows.sh"
+
+if [[ "${1:-}" == --check ]]; then
+    policy="${RBQ_POLICY_FILE:-rvld/arm4_teacher5674_student20000_env128/policy_vrl.onnx}"
+    [[ "$policy" = /* ]] || policy="$REPO_DIR/resources/policy/$policy"
+    encoder="${RBQ_CVTT_TEACHER_ENCODER:-${policy%.onnx}_student.onnx}"
+    test -f "$policy" && test -f "$encoder" || {
+        echo "Missing actor/student pair: $policy" >&2; exit 1;
+    }
+    exec "$BUILD_DIR/tools/policy-check" "$policy"
+fi
 
 PILOT_TCP=19100
 PILOT_BEACON=19101
 
 RBQ_SIM_VISION="${RBQ_SIM_VISION:-1}"
-RBQ_VRL_HISTORY_INIT="${RBQ_VRL_HISTORY_INIT:-zeros}"
+# 기본값은 MuJoCo 반복 시험(2026-09-28~29)과 같은 조건: 동기 영상 + repeat_first.
+RBQ_VRL_HISTORY_INIT="${RBQ_VRL_HISTORY_INIT:-repeat_first}"
+RBQ_SIM_SYNC_VISION="${RBQ_SIM_SYNC_VISION:-1}"
+# RBQ_POLICY_FILE 을 주지 않으면 이 배포 모델을 쓴다 (없으면 아래 "가장 최근" 선택).
+DEFAULT_VRL_POLICY="rvld/arm4_teacher5674_student20000_env128/policy_vrl.onnx"
 if [ "${1:-}" != "stop" ]; then
     case "${RBQ_VRL_HISTORY_INIT}" in
         zeros|repeat_first) ;;
@@ -60,10 +76,11 @@ if [ "${1:-}" = "stop" ]; then
     pkill -f '^pilot-sim-vrl-watchdog' 2>/dev/null || true
     pkill -x CAMEL-Console 2>/dev/null || true
     pkill -x CAMEL-Pilot   2>/dev/null || true
-    CONTAINER="${SIM_CONTAINER}" bash "${REPO_DIR}/docker/rbq_sim.sh" stop all 2>/dev/null || true
+    CONTAINER="${SIM_CONTAINER}" bash "${REPO_DIR}/simulation/mujoco/rbq_sim.sh" stop all 2>/dev/null || true
     pkill -f 'pilot-run-vrl-[^/]*/(motion|mujoco|pilot|vision)\.sh' 2>/dev/null || true
     pkill -x vision-viewer 2>/dev/null || true
     echo "[run_sim_vrl] done."
+    close_sim_windows
     exit 0
 fi
 
@@ -85,6 +102,10 @@ cmake --build "${BUILD_DIR}" -j"${RBQ_BUILD_JOBS:-4}"
 # resources/policy/vrl/ 안에 .onnx 가 없으면 여기서 바로 끊는다 -- Pilot 이
 # 대신 조용히 벤더 폴백(vendor)으로 빠지는 것보다, "아직 export된 RL 정책이
 # 없다"고 바로 알려주는 편이 낫다.
+if [ -z "${RBQ_POLICY_FILE:-}" ] && [ -f "${REPO_DIR}/resources/policy/${DEFAULT_VRL_POLICY}" ]; then
+    export RBQ_POLICY_FILE="${DEFAULT_VRL_POLICY}"
+    echo "[run_sim_vrl] RBQ_POLICY_FILE not set -- using default: ${RBQ_POLICY_FILE}"
+fi
 if [ -z "${RBQ_POLICY_FILE:-}" ]; then
     # *_student.onnx 는 actor가 아니라 sibling 파일이라 후보에서 제외한다
     # (export_student_vrl.py의 명명 관례 -- PolicyBackendVrl.cpp가 actor
@@ -95,7 +116,7 @@ if [ -z "${RBQ_POLICY_FILE:-}" ]; then
         echo "       gd_lab/vision_rl 의 scripts/export_vrl.py 로 먼저 내보내서 이 디렉터리에 두세요." >&2
         exit 1
     fi
-    export RBQ_POLICY_FILE="vrl/$(basename "${LATEST_VRL_POLICY}")"
+    export RBQ_POLICY_FILE="rvld/legacy_unversioned/$(basename "${LATEST_VRL_POLICY}")"
     echo "[run_sim_vrl] RBQ_POLICY_FILE not set -- defaulting to latest: ${RBQ_POLICY_FILE}"
 fi
 
@@ -118,7 +139,7 @@ pkill -KILL -x vision-viewer   2>/dev/null || true
 
 # ---- 컨테이너 ----------------------------------------------------------------
 echo "[run_sim_vrl] container up..."
-CONTAINER="${SIM_CONTAINER}" RBQ_SIM_TERRAIN_DIR="${VRL_TERRAIN_DIR}" IFACE=lo bash "${REPO_DIR}/docker/rbq_sim.sh" up
+CONTAINER="${SIM_CONTAINER}" RBQ_SIM_TERRAIN_DIR="${VRL_TERRAIN_DIR}" IFACE=lo bash "${REPO_DIR}/simulation/mujoco/rbq_sim.sh" up
 
 mkdir -p "${REPO_DIR}/logs"
 
@@ -129,7 +150,7 @@ TAB_DIR="$(mktemp -d -t pilot-run-vrl-XXXXXX)"
 
 cat > "${TAB_DIR}/motion.sh" <<EOF
 #!/bin/bash
-CONTAINER='${SIM_CONTAINER}' IFACE=lo bash '${REPO_DIR}/docker/rbq_sim.sh' motion
+CONTAINER='${SIM_CONTAINER}' IFACE=lo bash '${REPO_DIR}/simulation/mujoco/rbq_sim.sh' motion
 EOF
 
 cat > "${TAB_DIR}/mujoco.sh" <<EOF
@@ -142,7 +163,14 @@ done
 if ! docker exec "${SIM_CONTAINER}" pgrep -x Motion >/dev/null 2>&1; then
     echo '[run_sim_vrl] Motion never came up — check its tab.'
 else
-    CONTAINER='${SIM_CONTAINER}' RBQ_SIM_SYNC_VISION='${RBQ_SIM_SYNC_VISION:-0}' RBQ_SIM_VISION=${RBQ_SIM_VISION} IFACE=lo bash '${REPO_DIR}/docker/rbq_sim.sh' mujoco
+    # MujocoVrlSync occasionally exits right after launch; retry a quick exit.
+    for attempt in 1 2 3; do
+        started=\$(date +%s)
+        CONTAINER='${SIM_CONTAINER}' RBQ_SIM_SYNC_VISION='${RBQ_SIM_SYNC_VISION}' RBQ_SIM_VISION=${RBQ_SIM_VISION} IFACE=lo bash '${REPO_DIR}/simulation/mujoco/rbq_sim.sh' mujoco
+        [ \$(( \$(date +%s) - started )) -ge 20 ] && break
+        echo "[run_sim_vrl] MuJoCo exited within 20s (attempt \${attempt}/3) -- restarting..."
+        sleep 2
+    done
 fi
 EOF
 
@@ -153,27 +181,36 @@ cat > "${TAB_DIR}/pilot.sh" <<EOF
 #!/bin/bash
 cd '${REPO_DIR}'
 export RBQ_POLICY_FILE='${RBQ_POLICY_FILE}'
+export RBQ_BAVRL_SIM_ONLY='${RBQ_BAVRL_SIM_ONLY:-0}'
+export RBQ_CVTT_TEACHER_ENCODER='${RBQ_CVTT_TEACHER_ENCODER:-}'
+export RBQ_CVTT_TERRAIN_XML='${RBQ_CVTT_TERRAIN_XML:-}'
 export RBQ_VRL_HISTORY_INIT='${RBQ_VRL_HISTORY_INIT}'
 export RBQ_WALK='${RBQ_WALK:-ours}'
 export RBQ_PAYLOAD_KG='${RBQ_PAYLOAD_KG:-6}'
 export RBQ_HEALTH='${RBQ_HEALTH:-1}'
 '${BUILD_DIR}/pilot/CAMEL-Pilot' --interface lo --sim \\
-    --tcp-port ${PILOT_TCP} --beacon-port ${PILOT_BEACON}
+    --tcp-port ${PILOT_TCP} --beacon-port ${PILOT_BEACON} 2>&1 | tee -a '${RBQ_VRL_PILOT_LOG:-/dev/null}'
 EOF
 
 cat > "${TAB_DIR}/vision.sh" <<EOF
 #!/bin/bash
 if [ "${RBQ_SIM_VISION}" = "0" ]; then
-    echo "[run_sim_vrl] RBQ_SIM_VISION=0 -- Mujoco의 카메라가 꺼져 있어 depth 4칸 다 'no data'로만 뜹니다."
+    echo "[run_sim_vrl] RBQ_SIM_VISION=0 -- Mujoco의 카메라가 꺼져 있어 학생 입력 Depth/IR 8칸이 갱신되지 않습니다."
     echo "[run_sim_vrl] 다시 켜려면: RBQ_SIM_VISION=1 bash scripts/run_sim_vrl.sh"
 fi
+echo '[run_sim_vrl] waiting for MuJoCo before opening Student input viewer...'
+for i in \$(seq 1 30); do
+    docker exec "${SIM_CONTAINER}" sh -c 'pgrep -x MujocoVrlSync >/dev/null || pgrep -x Mujoco >/dev/null' >/dev/null 2>&1 && break
+    sleep 1
+done
+sleep 2
 '${BUILD_DIR}/tools/vision-viewer'
 EOF
 
 chmod +x "${TAB_DIR}"/*.sh
 
 gnome-terminal \
-    --window --title="Motion (sim)"      -e "${TAB_DIR}/motion.sh" \
+    --window --role="$SIM_WINDOW_ROLE" --title="Motion (sim)" -e "${TAB_DIR}/motion.sh" \
     --tab    --title="Mujoco"            -e "${TAB_DIR}/mujoco.sh" \
     --tab    --title="CAMEL-Pilot [vRL]"  -e "${TAB_DIR}/pilot.sh" \
     --tab    --title="Vision"            -e "${TAB_DIR}/vision.sh"

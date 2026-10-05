@@ -1,0 +1,244 @@
+{
+  "schema": "bavrl_v1",
+  "simulation_only": true,
+  "checkpoint": "/home/user/gd_project/gd_lab_vrl/logs/bavrl/dwb38000_bavrl_1000_20260930/bavrl_150.pt",
+  "iteration": 150,
+  "teacher_sha256": "c6cfe178cc069766f9543fb5fba983eb05a322d507e4302ee2495d4d26d2d46b",
+  "deploy_context": {
+    "schema_version": 1,
+    "robot": "RBQ10",
+    "policy_dt": 0.01,
+    "joint_names": [
+      "FL_HIP",
+      "FR_HIP",
+      "HL_HIP",
+      "HR_HIP",
+      "FL_THIGH",
+      "FR_THIGH",
+      "HL_THIGH",
+      "HR_THIGH",
+      "FL_KNEE",
+      "FR_KNEE",
+      "HL_KNEE",
+      "HR_KNEE"
+    ],
+    "default_joint_pos": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.7599999904632568,
+      0.7599999904632568,
+      0.7599999904632568,
+      0.7599999904632568,
+      -1.4500000476837158,
+      -1.4500000476837158,
+      -1.4500000476837158,
+      -1.4500000476837158
+    ],
+    "action": {
+      "type": "joint_position",
+      "scale": [
+        0.25,
+        0.25,
+        0.25,
+        0.25,
+        0.25,
+        0.25,
+        0.25,
+        0.25,
+        0.25,
+        0.25,
+        0.25,
+        0.25
+      ],
+      "offset": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.7599999904632568,
+        0.7599999904632568,
+        0.7599999904632568,
+        0.7599999904632568,
+        -1.4500000476837158,
+        -1.4500000476837158,
+        -1.4500000476837158,
+        -1.4500000476837158
+      ],
+      "clip": null,
+      "previous_action": "clipped",
+      "soft_margin_deg": 5.0,
+      "gains": {
+        "kp": [
+          123.39,
+          123.39,
+          123.39,
+          123.39,
+          123.39,
+          123.39,
+          123.39,
+          123.39,
+          127.77,
+          127.77,
+          127.77,
+          127.77
+        ],
+        "kd": [
+          2.4,
+          2.4,
+          2.4,
+          2.4,
+          2.4,
+          2.4,
+          2.4,
+          2.4,
+          2.4,
+          2.4,
+          2.4,
+          2.4
+        ]
+      }
+    },
+    "history_initialization": "repeat_first",
+    "terms": [
+      {
+        "name": "base_ang_vel",
+        "source": "angular_velocity",
+        "size": 3,
+        "history": 5,
+        "transforms": [
+          {
+            "op": "clip",
+            "min": -400.0,
+            "max": 400.0
+          },
+          {
+            "op": "scale",
+            "values": [
+              0.25,
+              0.25,
+              0.25
+            ]
+          }
+        ]
+      },
+      {
+        "name": "projected_gravity",
+        "source": "gravity",
+        "size": 3,
+        "history": 5,
+        "transforms": [
+          {
+            "op": "clip",
+            "min": -100.0,
+            "max": 100.0
+          }
+        ]
+      },
+      {
+        "name": "velocity_commands",
+        "source": "command",
+        "size": 3,
+        "history": 5,
+        "transforms": [
+          {
+            "op": "scale",
+            "values": [
+              2.0,
+              2.0,
+              0.25
+            ]
+          }
+        ]
+      },
+      {
+        "name": "joint_pos",
+        "source": "joint_position_rel",
+        "size": 12,
+        "history": 5,
+        "transforms": [
+          {
+            "op": "clip",
+            "min": -100.0,
+            "max": 100.0
+          },
+          {
+            "op": "scale",
+            "values": [
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ]
+          }
+        ]
+      },
+      {
+        "name": "joint_vel",
+        "source": "joint_velocity",
+        "size": 12,
+        "history": 5,
+        "transforms": [
+          {
+            "op": "clip",
+            "min": -2000.0,
+            "max": 2000.0
+          },
+          {
+            "op": "scale",
+            "values": [
+              0.05000000074505806,
+              0.05000000074505806,
+              0.05000000074505806,
+              0.05000000074505806,
+              0.05000000074505806,
+              0.05000000074505806,
+              0.05000000074505806,
+              0.05000000074505806,
+              0.05000000074505806,
+              0.05000000074505806,
+              0.05000000074505806,
+              0.05000000074505806
+            ]
+          }
+        ]
+      },
+      {
+        "name": "actions",
+        "source": "previous_action",
+        "size": 12,
+        "history": 5,
+        "transforms": []
+      },
+      {
+        "name": "payload",
+        "source": "payload",
+        "size": 1,
+        "history": 5,
+        "transforms": [
+          {
+            "op": "scale",
+            "values": [
+              0.20000000298023224
+            ]
+          }
+        ]
+      }
+    ],
+    "actor_history_steps": 4,
+    "provenance": {
+      "policy_class": "DreamwaqActorCritic",
+      "source": "resolved_environment"
+    }
+  },
+  "onnx_parity": "passed"
+}

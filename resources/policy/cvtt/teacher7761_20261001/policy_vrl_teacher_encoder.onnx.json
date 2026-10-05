@@ -1,0 +1,7 @@
+{
+  "source_checkpoint": "/home/user/gd_project/gd_lab_vrl/checkpoints/teachers/cvtt/arm4_7761/7761_top1.pt",
+  "source_sha256": "f7c010331a5a3dac7b2b6c0e78c9678c49fdbb5661cb9f0265ba62b1fd9e0c87",
+  "encoder_sha256": "4ff1c2f2230e847dedcf40dc3687261bdb219d2f0f27e6e234a3bdbc7ab38aab",
+  "input": "masked height[11,17] then visibility[11,17]",
+  "output": "terrain latent[32]"
+}

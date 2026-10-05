@@ -1,0 +1,167 @@
+{
+  "teacher_iteration": 4500,
+  "student_iteration": 20000,
+  "student_arch": "grid_attention_v1",
+  "age_input": {
+    "hidden_slot": 63,
+    "units": "seconds_clipped_0_1"
+  },
+  "student_teacher_checkpoint": "/home/user/gd_project/gd_lab_vrl/logs/bivt_ray4500_gavd_20000_20261001.launch/teacher.pt",
+  "camera_contract": {
+    "profile": "vendor_legacy",
+    "positions": [
+      [
+        0.36462,
+        0,
+        -0.02663
+      ],
+      [
+        0.26053,
+        0,
+        -0.04759
+      ],
+      [
+        -0.19515,
+        0.0065,
+        -0.04832
+      ],
+      [
+        -0.35299,
+        -1.1e-05,
+        -0.02051
+      ]
+    ],
+    "quaternions_opengl": [
+      [
+        0,
+        0.8191608,
+        0,
+        -0.5735639
+      ],
+      [
+        0,
+        -0.6156417,
+        0,
+        0.7880262
+      ],
+      [
+        0,
+        -0.7071046,
+        0,
+        0.707109
+      ],
+      [
+        0.4993997,
+        0.0263259,
+        0.8647709,
+        -0.0455865
+      ]
+    ],
+    "sensor_size_m": [
+      0.003663,
+      0.0021396
+    ],
+    "focal_m": 0.00193,
+    "width": 80,
+    "height": 45,
+    "source_resolution": [
+      640,
+      360
+    ],
+    "depth_clip": [
+      0.15,
+      5.0
+    ],
+    "period_steps": 8,
+    "policy_dt": 0.01,
+    "render_height": 48,
+    "schema_version": 1,
+    "terrain_observation_version": 2,
+    "camera_names": [
+      "front_depth_camera0",
+      "front_depth_camera1",
+      "hind_depth_camera2",
+      "hind_depth_camera3"
+    ],
+    "channels": [
+      "depth",
+      "ir_proxy"
+    ],
+    "depth_semantics": "optical_axis_metres",
+    "quaternion_order": "wxyz",
+    "fov_degrees": [
+      86.99994958511454,
+      57.999251984409135
+    ],
+    "fx": 42.15124215124215,
+    "fy": 40.59169938306225,
+    "cx": 40.0,
+    "cy": 22.5,
+    "frame_shape": [
+      1,
+      4,
+      2,
+      45,
+      80
+    ]
+  },
+  "agent_config_source": "/home/user/gd_project/gd_lab_vrl/checkpoints/teachers/bivt/ray_4500_20261001/params/agent.yaml",
+  "architecture_strict_load": true,
+  "safe_weights_only": true,
+  "checks": {
+    "policy_vrl.onnx": {
+      "inputs": [
+        [
+          "direct_obs",
+          [
+            "batch",
+            46
+          ]
+        ],
+        [
+          "cenet_obs",
+          [
+            "batch",
+            230
+          ]
+        ],
+        [
+          "terrain_latent",
+          [
+            "batch",
+            32
+          ]
+        ]
+      ],
+      "torch_onnx_max_abs_error": 2.384185791015625e-06
+    },
+    "policy_vrl_student.onnx": {
+      "inputs": [
+        [
+          "frames",
+          [
+            1,
+            4,
+            2,
+            45,
+            80
+          ]
+        ],
+        [
+          "hidden_in",
+          [
+            1,
+            64
+          ]
+        ]
+      ],
+      "torch_onnx_max_abs_error": 1.341104507446289e-07
+    }
+  },
+  "sha256": {
+    "/home/user/gd_project/gd_lab_vrl/checkpoints/teachers/bivt/ray_4500_20261001/teacher/model_4500.pt": "7131312ffb7ecee17c33a3b52467a572d0028db9b28f829f29812cca2ece0916",
+    "/home/user/gd_project/gd_lab_vrl/logs/vision_rbq10_dreamwaq/arm_4/bivt_ray4500_gavd_20000_20261001/perception_20000.pt": "4d3a708fc1764f8c8a7721598e820850ee1c3e961bcc63fcdc8b65acda73337e",
+    "/home/user/gd_project/gd_rbq10_deploy_vrl/resources/policy/gavd/bivt_ray4500_student20000_20261001/policy_vrl.onnx": "14125cd5a1f1759ef3cf4602271a62b74086d8242956dbae43b35262a0fcc9f4",
+    "/home/user/gd_project/gd_rbq10_deploy_vrl/resources/policy/gavd/bivt_ray4500_student20000_20261001/policy_vrl_student.onnx": "b58fba0bea363e112505332cb8cc4289606483352976589ad172b921c8a024ba"
+  }
+}
