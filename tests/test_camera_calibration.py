@@ -361,6 +361,19 @@ class Launchers(unittest.TestCase):
             self.assertEqual((ROOT / runtime / "scripts/export_safe_vrl_pair.py").read_bytes(),
                              (ROOT / "scripts/export_safe_vrl_pair.py").read_bytes())
 
+    def test_reused_containers_must_see_the_current_host_files(self):
+        # A bind mount pins the inode, not the path: after git recreated the terrain directory the old
+        # GAST container saw an empty folder and MuJoCo could not open rbq_payload.xml (2026-10-06).
+        for script in ("simulation/mujoco/rbq_sim.sh", "gast/runtime/simulation/mujoco/rbq_sim.sh",
+                       "bivt/oracle_runtime/simulation/mujoco/rbq_sim.sh"):
+            with self.subTest(script=script):
+                text = (ROOT / script).read_text()
+                reuse = text.split("재사용합니다.", 1)[1].split("TERRAIN_MOUNTS=()", 1)[0]
+                self.assertIn("mounts_live", reuse)
+                self.assertIn("stale-mount", reuse)
+                mujoco = text.split("camera_check_container() {", 1)[1].split("\n}\n", 1)[0]
+                self.assertIn('cmp -s - "${model}"', mujoco)
+
     def test_runtime_pilots_match_the_shared_teacher_scan_constructor(self):
         # gast/runtime/cvtt is a symlink to the root cvtt/, so its VisionStudentThread copy must pass the
         # camera profile exactly like the root one (bivt/oracle_runtime keeps its own legacy cvtt copy).

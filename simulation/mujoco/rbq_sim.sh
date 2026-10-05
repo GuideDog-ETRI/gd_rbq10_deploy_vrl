@@ -107,6 +107,12 @@ camera_check_container() {
         *) model="${rbq_src}/resources/model/${include}" ;;
     esac
     camera_check model --rbq-dir "${RBQ_DIR}" --model-xml "${model}"
+    # The host file passed the check; MuJoCo reads the container's view of it. They must be the same file.
+    ${DOCKER} exec "${CONTAINER}" cat "/workspace/RBQ/resources/model/${include}" 2>/dev/null | cmp -s - "${model}" || {
+        echo "ERROR: ${CONTAINER} does not see ${model} (stale bind mount after the host file was recreated);" \
+             "stop the simulator and run rbq_sim.sh up again" >&2
+        exit 2
+    }
 }
 
 cmd_build() {
@@ -117,6 +123,23 @@ cmd_build() {
         -f "${SCRIPT_DIR}/Dockerfile.rbq-sim" \
         -t "${IMAGE_TAG}" \
         "${SCRIPT_DIR}"
+}
+
+# 컨테이너 안에서 본 SDK·지형 파일이 지금 호스트 파일과 같은지 (마운트가 끊긴 옛 inode 가 아닌지).
+mounts_live() {
+    ${DOCKER} exec "${CONTAINER}" test -f /workspace/RBQ/resources/model/rbq/rbq.xml || return 1
+    [ -n "${TERRAIN_DIR}" ] || return 0
+    local name
+    for name in rbq_environment.xml environment.xml; do
+        ${DOCKER} exec "${CONTAINER}" cat "/workspace/RBQ/resources/model/env/vrl_progression/${name}" 2>/dev/null |
+            cmp -s - "${TERRAIN_DIR}/${name}" || return 1
+    done
+    ${DOCKER} exec "${CONTAINER}" cat /workspace/RBQ/resources/model/rbq_environment.xml 2>/dev/null |
+        cmp -s - "${TERRAIN_DIR}/rbq_environment.xml" || return 1
+    if grep -q 'rbq_payload.xml' "${TERRAIN_DIR}/rbq_environment.xml"; then
+        ${DOCKER} exec "${CONTAINER}" cat /workspace/RBQ/resources/model/env/vrl_progression/rbq_payload.xml 2>/dev/null |
+            cmp -s - "${TERRAIN_DIR}/rbq_payload.xml" || return 1
+    fi
 }
 
 cmd_up() {
@@ -162,7 +185,21 @@ cmd_up() {
     if ${DOCKER} ps -a --format '{{.Names}}' | grep -qx "${CONTAINER}"; then
         echo "컨테이너 ${CONTAINER} 가 이미 있습니다. 재사용합니다."
         ${DOCKER} start "${CONTAINER}" >/dev/null
-        return
+        # A bind mount follows the directory/file the container was created with, not its path: if the
+        # host copy was deleted and recreated (git checkout, rebase, rsync), the container keeps seeing
+        # the old, now empty inode and MuJoCo cannot open rbq_payload.xml. Same path is not enough.
+        if ! mounts_live; then
+            if ${DOCKER} exec "${CONTAINER}" pgrep -f 'Motion|Mujoco' >/dev/null 2>&1; then
+                echo "ERROR: ${CONTAINER} has stale mounts but a simulator is running in it; stop it first." >&2
+                return 1
+            fi
+            ${DOCKER} stop "${CONTAINER}" >/dev/null
+            backup_name="${CONTAINER}-stale-mount-$(date +%Y%m%d%H%M%S)"
+            ${DOCKER} rename "${CONTAINER}" "$backup_name"
+            echo "[info] ${CONTAINER} saw deleted host files (stale bind mount); preserved it as $backup_name and recreating."
+        else
+            return
+        fi
     fi
 
     TERRAIN_MOUNTS=()
