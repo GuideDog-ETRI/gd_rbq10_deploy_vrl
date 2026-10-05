@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mujoco model="vrl camera-input flat test">
+  <!-- Continuous ground: x=-4..102m; test course x=0..100m. -->
+  <statistic center="3 0 0.4" extent="5"/>
+  <visual><headlight diffuse="0.7 0.7 0.7" ambient="0.25 0.25 0.25"/>
+    <global azimuth="-125" elevation="-22"/></visual>
+  <default><default class="course"><geom type="box" friction="0.8 0.8 0.8" priority="2" contype="1" conaffinity="1"/></default></default>
+  <worldbody>
+    <light pos="3 0 8" dir="0 0 -1" directional="true"/>
+    <geom name="flat_camera_test" class="course" type="box" pos="49 0 -0.75" size="53 3 0.75"
+          friction="0.8 0.8 0.8" priority="2" contype="1" conaffinity="1"
+          rgba="0.22 0.42 0.28 1"/>
+  </worldbody>
+  <contact>
+    <pair geom1="RR" geom2="flat_camera_test"/><pair geom1="RL" geom2="flat_camera_test"/>
+    <pair geom1="FR" geom2="flat_camera_test"/><pair geom1="FL" geom2="flat_camera_test"/>
+  </contact>
+</mujoco>

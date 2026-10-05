@@ -1,3 +1,5 @@
+// Legacy depth-only viewer retained for reference. The vision-viewer target
+// now builds student_input_viewer.cpp so its display matches student frames.
 // vision-viewer — BT0-3(하방 depth 카메라 4개)를 2x2로 타일링해 실시간으로
 // 보여주는 최소 뷰어. 이 저장소엔 카메라 이미지를 보여주는 GUI가 없어서
 // (Console 은 조인트/URDF 3D 뷰어일 뿐, Vision 앱은 GUI 툴킷을 링크하지 않은
@@ -67,12 +69,12 @@ int main() {
 
     const std::string windowName = "BT0-3 depth (2x2, grayscale, mm)";
     cv::namedWindow(windowName, cv::WINDOW_NORMAL);
-    cv::resizeWindow(windowName, 1280, 720);
+    cv::resizeWindow(windowName, 720, 1280);
 
     const int64_t staleMs = 2000;
     while (true) {
         std::array<cv::Mat, kNumCams> tiles;
-        int tileW = 320, tileH = 180;
+        int tileW = 180, tileH = 320;
         for (int i = 0; i < kNumCams; ++i) {
             cv::Mat depth16;
             int64_t stamp;
@@ -87,6 +89,8 @@ int main() {
                                        .count();
             if (!depth16.empty() && (nowMs - stamp) < staleMs) {
                 tile = normalizeDepthForDisplay(depth16);
+                // Display-only convention shared with student_input_viewer.
+                cv::rotate(tile, tile, cv::ROTATE_90_CLOCKWISE);
                 if (tile.cols != tileW || tile.rows != tileH) cv::resize(tile, tile, {tileW, tileH});
             } else {
                 tile = cv::Mat(tileH, tileW, CV_8UC3, cv::Scalar(30, 30, 30));

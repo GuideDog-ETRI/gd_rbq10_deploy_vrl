@@ -1,0 +1,162 @@
+{
+  "teacher_iteration": 4125,
+  "student_iteration": 20000,
+  "student_teacher_checkpoint": "/data/users/bsseo/gd_lab_vrl/logs/vision_rbq10_dreamwaq/arm_4/arm4_top2_teacher4125_frozen_20260928_171618/model_top1.pt",
+  "camera_contract": {
+    "profile": "vendor_legacy",
+    "positions": [
+      [
+        0.36462,
+        0,
+        -0.02663
+      ],
+      [
+        0.26053,
+        0,
+        -0.04759
+      ],
+      [
+        -0.19515,
+        0.0065,
+        -0.04832
+      ],
+      [
+        -0.35299,
+        -1.1e-05,
+        -0.02051
+      ]
+    ],
+    "quaternions_opengl": [
+      [
+        0,
+        0.8191608,
+        0,
+        -0.5735639
+      ],
+      [
+        0,
+        -0.6156417,
+        0,
+        0.7880262
+      ],
+      [
+        0,
+        -0.7071046,
+        0,
+        0.707109
+      ],
+      [
+        0.4993997,
+        0.0263259,
+        0.8647709,
+        -0.0455865
+      ]
+    ],
+    "sensor_size_m": [
+      0.003663,
+      0.0021396
+    ],
+    "focal_m": 0.00193,
+    "width": 80,
+    "height": 45,
+    "source_resolution": [
+      640,
+      360
+    ],
+    "depth_clip": [
+      0.15,
+      5.0
+    ],
+    "period_steps": 8,
+    "policy_dt": 0.01,
+    "render_height": 48,
+    "schema_version": 1,
+    "terrain_observation_version": 2,
+    "camera_names": [
+      "front_depth_camera0",
+      "front_depth_camera1",
+      "hind_depth_camera2",
+      "hind_depth_camera3"
+    ],
+    "channels": [
+      "depth",
+      "ir_proxy"
+    ],
+    "depth_semantics": "optical_axis_metres",
+    "quaternion_order": "wxyz",
+    "fov_degrees": [
+      86.99994958511454,
+      57.999251984409135
+    ],
+    "fx": 42.15124215124215,
+    "fy": 40.59169938306225,
+    "cx": 40.0,
+    "cy": 22.5,
+    "frame_shape": [
+      1,
+      4,
+      2,
+      45,
+      80
+    ]
+  },
+  "agent_config_source": "/home/user/gd_project/gd_lab_vrl/checkpoints/arm4_teacher4125_student20000_env128/teacher/params/agent.yaml",
+  "architecture_strict_load": true,
+  "safe_weights_only": true,
+  "checks": {
+    "policy_vrl.onnx": {
+      "inputs": [
+        [
+          "direct_obs",
+          [
+            "batch",
+            46
+          ]
+        ],
+        [
+          "cenet_obs",
+          [
+            "batch",
+            230
+          ]
+        ],
+        [
+          "terrain_latent",
+          [
+            "batch",
+            32
+          ]
+        ]
+      ],
+      "torch_onnx_max_abs_error": 1.6689300537109375e-06
+    },
+    "policy_vrl_student.onnx": {
+      "inputs": [
+        [
+          "frames",
+          [
+            1,
+            4,
+            2,
+            45,
+            80
+          ]
+        ],
+        [
+          "hidden_in",
+          [
+            1,
+            64
+          ]
+        ]
+      ],
+      "torch_onnx_max_abs_error": 7.227063179016113e-07
+    }
+  },
+  "sha256": {
+    "/home/user/gd_project/gd_lab_vrl/checkpoints/arm4_teacher4125_student20000_env128/teacher/model_4125_top2.pt": "dbcce73bd5976a9f1db07b48a61d65bae3f6097a5067b90d4880fa0fd4efd248",
+    "/home/user/gd_project/gd_lab_vrl/checkpoints/arm4_teacher4125_student20000_env128/student/perception_20000.pt": "a57fcd68e16d1d688a14aa7efd29709831531a94e212d9291646779be23504cd",
+    "resources/policy/vrl/arm4_teacher4125_student20000_env128/policy_vrl.onnx": "e79b375b6a273599609c95b5ae10aa8926d3886a388dc129f905559c7f6cd14a",
+    "resources/policy/vrl/arm4_teacher4125_student20000_env128/policy_vrl_student.onnx": "2f43d4dea36ae1d60d4a02535fe089e7452975297fdfc96ddce462f0ae184ca4"
+  }
+}

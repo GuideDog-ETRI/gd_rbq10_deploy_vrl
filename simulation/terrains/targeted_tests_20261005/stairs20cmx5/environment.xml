@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mujoco model="five 20cm risers up and down">
+  <statistic center="2.8 0 0.55" extent="7"/>
+  <visual><headlight diffuse="0.7 0.7 0.7" ambient="0.25 0.25 0.25"/><global azimuth="-125" elevation="-22"/></visual>
+  <default><default class="course"><geom type="box" friction="0.8 0.8 0.8" priority="2" contype="1" conaffinity="1"/></default>
+    <default class="guard"><geom type="box" friction="0.3 0.005 0.0001" contype="1" conaffinity="1" rgba="0.55 0.8 0.95 0.18"/></default></default>
+  <worldbody>
+    <light pos="2.8 0 9" dir="0 0 -1" directional="true"/>
+    <geom name="stair_base" class="course" pos="0 0 -0.750" size="12 0.900 0.750" rgba="0.22 0.42 0.28 1"/>
+    <geom name="up1" class="course" pos="1.175 0 -0.650" size="0.175 0.900 0.850" rgba="0.42 0.42 0.46 1"/>
+    <geom name="up2" class="course" pos="1.525 0 -0.550" size="0.175 0.900 0.950" rgba="0.42 0.42 0.46 1"/>
+    <geom name="up3" class="course" pos="1.875 0 -0.450" size="0.175 0.900 1.050" rgba="0.42 0.42 0.46 1"/>
+    <geom name="up4" class="course" pos="2.225 0 -0.350" size="0.175 0.900 1.150" rgba="0.42 0.42 0.46 1"/>
+    <geom name="up5" class="course" pos="2.575 0 -0.250" size="0.175 0.900 1.250" rgba="0.42 0.42 0.46 1"/>
+    <geom name="top_landing" class="course" pos="3.250 0 -0.250" size="0.500 0.900 1.250" rgba="0.22 0.42 0.28 1"/>
+    <geom name="down1" class="course" pos="3.925 0 -0.350" size="0.175 0.900 1.150" rgba="0.42 0.42 0.46 1"/>
+    <geom name="down2" class="course" pos="4.275 0 -0.450" size="0.175 0.900 1.050" rgba="0.42 0.42 0.46 1"/>
+    <geom name="down3" class="course" pos="4.625 0 -0.550" size="0.175 0.900 0.950" rgba="0.42 0.42 0.46 1"/>
+    <geom name="down4" class="course" pos="4.975 0 -0.650" size="0.175 0.900 0.850" rgba="0.42 0.42 0.46 1"/>
+    <geom name="down5" class="course" pos="5.325 0 -0.750" size="0.175 0.900 0.750" rgba="0.42 0.42 0.46 1"/>
+    <geom name="guard_left" class="guard" pos="0 0.960 0.250" size="12 0.060 1.750"/>
+    <geom name="guard_right" class="guard" pos="0 -0.960 0.250" size="12 0.060 1.750"/>
+    <geom name="guard_start" class="guard" pos="-12.060 0 0.250" size="0.060 1.020 1.750"/>
+    <geom name="guard_finish" class="guard" pos="12.060 0 0.250" size="0.060 1.020 1.750"/>
+  </worldbody>
+  <contact>
+    <pair geom1="RR" geom2="stair_base"/><pair geom1="RL" geom2="stair_base"/><pair geom1="FR" geom2="stair_base"/><pair geom1="FL" geom2="stair_base"/>
+    <pair geom1="RR" geom2="up1"/><pair geom1="RL" geom2="up1"/><pair geom1="FR" geom2="up1"/><pair geom1="FL" geom2="up1"/>
+    <pair geom1="RR" geom2="up2"/><pair geom1="RL" geom2="up2"/><pair geom1="FR" geom2="up2"/><pair geom1="FL" geom2="up2"/>
+    <pair geom1="RR" geom2="up3"/><pair geom1="RL" geom2="up3"/><pair geom1="FR" geom2="up3"/><pair geom1="FL" geom2="up3"/>
+    <pair geom1="RR" geom2="up4"/><pair geom1="RL" geom2="up4"/><pair geom1="FR" geom2="up4"/><pair geom1="FL" geom2="up4"/>
+    <pair geom1="RR" geom2="up5"/><pair geom1="RL" geom2="up5"/><pair geom1="FR" geom2="up5"/><pair geom1="FL" geom2="up5"/>
+    <pair geom1="RR" geom2="top_landing"/><pair geom1="RL" geom2="top_landing"/><pair geom1="FR" geom2="top_landing"/><pair geom1="FL" geom2="top_landing"/>
+    <pair geom1="RR" geom2="down1"/><pair geom1="RL" geom2="down1"/><pair geom1="FR" geom2="down1"/><pair geom1="FL" geom2="down1"/>
+    <pair geom1="RR" geom2="down2"/><pair geom1="RL" geom2="down2"/><pair geom1="FR" geom2="down2"/><pair geom1="FL" geom2="down2"/>
+    <pair geom1="RR" geom2="down3"/><pair geom1="RL" geom2="down3"/><pair geom1="FR" geom2="down3"/><pair geom1="FL" geom2="down3"/>
+    <pair geom1="RR" geom2="down4"/><pair geom1="RL" geom2="down4"/><pair geom1="FR" geom2="down4"/><pair geom1="FL" geom2="down4"/>
+    <pair geom1="RR" geom2="down5"/><pair geom1="RL" geom2="down5"/><pair geom1="FR" geom2="down5"/><pair geom1="FL" geom2="down5"/>
+  </contact>
+</mujoco>

@@ -125,7 +125,7 @@ WalkConfig WalkConfig::load() {
     const std::string name =
         value("RBQ_POLICY_FILE",
               value(sdk ? "RBQ_POLICY_SDK" : "RBQ_POLICY_OURS",
-                    sdk ? "rbq10" : "d_v3.6.21_b1_18"));
+                    sdk ? "rbq10" : "dwb/d_v3.6.21_b1_18"));
 
     const std::string path = std::string(kPolicyRoot) + name;
     cfg.m_policyPath = path;

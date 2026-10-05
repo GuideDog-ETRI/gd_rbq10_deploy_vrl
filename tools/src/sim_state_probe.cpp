@@ -19,10 +19,10 @@ int main(int argc,char**argv) {
     auto start=std::chrono::steady_clock::now();
     while(std::chrono::steady_clock::now()-start<std::chrono::seconds(seconds)) {
         {std::lock_guard<std::mutex>g(mutex);if(count){
-            const auto&p=state.body_task().pos();const auto&v=state.body_task().vel();
+            const auto&p=state.body_task().pos();const auto&v=state.body_task().vel();const auto&q=state.body_task().quat();const auto&r=state.body_task().rpy();const auto&rot=state.body_task().rot();const auto&imu=state.imu().orientation();
             std::cout.precision(12);
             std::cout<<"{\"wall\":"<<wall()<<",\"received\":"<<received<<",\"count\":"<<count
-                     <<",\"pos\":["<<p[0]<<","<<p[1]<<","<<p[2]<<"],\"vel\":["<<v[0]<<","<<v[1]<<","<<v[2]<<"],\"foot_fz\":[";
+                     <<",\"pos\":["<<p[0]<<","<<p[1]<<","<<p[2]<<"],\"quat\":["<<q[0]<<","<<q[1]<<","<<q[2]<<","<<q[3]<<"],\"imu_xyzw\":["<<imu.x()<<","<<imu.y()<<","<<imu.z()<<","<<imu.w()<<"],\"rpy\":["<<r[0]<<","<<r[1]<<","<<r[2]<<"],\"rot\":["<<rot[0]<<","<<rot[1]<<","<<rot[2]<<","<<rot[3]<<","<<rot[4]<<","<<rot[5]<<","<<rot[6]<<","<<rot[7]<<","<<rot[8]<<"],\"vel\":["<<v[0]<<","<<v[1]<<","<<v[2]<<"],\"foot_fz\":[";
             for(int i=0;i<4;++i){if(i)std::cout<<",";std::cout<<state.leg_contact()[i].force()[2];}
             std::cout<<"]}"<<std::endl;
         }}

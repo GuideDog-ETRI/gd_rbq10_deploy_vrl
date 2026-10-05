@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mujoco model="rbq vrl six 10cm stairs">
+  <include file="rbq_payload.xml"/>
+  <include file="stairs_10cm_6.xml"/>
+</mujoco>

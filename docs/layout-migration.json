@@ -1,0 +1,394 @@
+[
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "docker/build_sync_mujoco.sh",
+    "new": "simulation/mujoco/build_sync_mujoco.sh",
+    "sha256_before": "672ecfc77d5ca8c0191399204244dbf1b84e2ea98ebc682207625fb0ebba91b7",
+    "sha256_after": "671fe428c1a5b6a06492e79c770813859bf0b2bfa940a87b2188a3560014d98c"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "docker/setup_nvidia_runtime.sh",
+    "new": "simulation/mujoco/setup_nvidia_runtime.sh",
+    "sha256_before": "1e62e3e66eec1f9cbbf7898b2f75834070e7abad8321243b3174d30cd1a19310",
+    "sha256_after": "78efa15e43fa559653be80a26612f8f11bf2a47f1f83786ddc8cab2c0ede4bcf"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "docker/prepare_payload.py",
+    "new": "simulation/mujoco/prepare_payload.py",
+    "sha256_before": "06a9f74087bad6d20060b7314550b92a94969e6e8adafbdbd46906ce37cd11d6",
+    "sha256_after": "06a9f74087bad6d20060b7314550b92a94969e6e8adafbdbd46906ce37cd11d6"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "docker/rbq_sim.sh",
+    "new": "simulation/mujoco/rbq_sim.sh",
+    "sha256_before": "604ff96d496706d5754fffec164b9fb9c841dfaf5a2827bd287c489c191e24fd",
+    "sha256_after": "51b684fdb81d019fff0505090b80d996a180f9f4a14c85022a543b1ad926deb4"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "docker/terrain/vrl_progression/rbq_payload.xml",
+    "new": "simulation/terrains/vrl_progression/rbq_payload.xml",
+    "sha256_before": "3cb3399286b198234c7c4ca058d758a6bd448a063a2d51f1b52ab42854fde7ae",
+    "sha256_after": "3cb3399286b198234c7c4ca058d758a6bd448a063a2d51f1b52ab42854fde7ae"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "docker/terrain/vrl_progression/rbq_stairs_15cm_6.xml",
+    "new": "simulation/terrains/vrl_progression/rbq_stairs_15cm_6.xml",
+    "sha256_before": "1afe06c878889dc88abb94d46a109ab6afa00ed0b376d71d7a0e44c1fe22b295",
+    "sha256_after": "1afe06c878889dc88abb94d46a109ab6afa00ed0b376d71d7a0e44c1fe22b295"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "docker/terrain/vrl_progression/rbq_flat_100m.xml",
+    "new": "simulation/terrains/vrl_progression/rbq_flat_100m.xml",
+    "sha256_before": "3d645618d01e72008f5172e8054c552c13f044f278c74a34fc4cf10ce517d06c",
+    "sha256_after": "3d645618d01e72008f5172e8054c552c13f044f278c74a34fc4cf10ce517d06c"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "docker/terrain/vrl_progression/flat_100m.xml",
+    "new": "simulation/terrains/vrl_progression/flat_100m.xml",
+    "sha256_before": "96dfa90780a197ce454098abfec570bcf61df92672a42b2e8b335dfeaf4e4e98",
+    "sha256_after": "96dfa90780a197ce454098abfec570bcf61df92672a42b2e8b335dfeaf4e4e98"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "docker/terrain/vrl_progression/environment.xml",
+    "new": "simulation/terrains/vrl_progression/environment.xml",
+    "sha256_before": "5977d843d5c4ff506d31c2fcf8aaa6bc916fcec20c9a7c4459b6ab6f1b2900a2",
+    "sha256_after": "5977d843d5c4ff506d31c2fcf8aaa6bc916fcec20c9a7c4459b6ab6f1b2900a2"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "docker/terrain/vrl_progression/stairs_15cm_6.xml",
+    "new": "simulation/terrains/vrl_progression/stairs_15cm_6.xml",
+    "sha256_before": "c9178d3c9fc10834412a202a3b7a76aa295cefe773cd48caee8886896ffa48a8",
+    "sha256_after": "c9178d3c9fc10834412a202a3b7a76aa295cefe773cd48caee8886896ffa48a8"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "docker/terrain/vrl_progression/rbq_vision_check_gap.xml",
+    "new": "simulation/terrains/vrl_progression/rbq_vision_check_gap.xml",
+    "sha256_before": "931e9c0adb7465f633dba7dd22f9e59ecffbeaecea24eba7e48f5bea3cebbb5c",
+    "sha256_after": "931e9c0adb7465f633dba7dd22f9e59ecffbeaecea24eba7e48f5bea3cebbb5c"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "docker/terrain/vrl_progression/rbq_stairs_10cm_6.xml",
+    "new": "simulation/terrains/vrl_progression/rbq_stairs_10cm_6.xml",
+    "sha256_before": "2b3645466c6861b9ac4ed2e3bae629171ad9d611ba7d4de1f55ee067ba930268",
+    "sha256_after": "2b3645466c6861b9ac4ed2e3bae629171ad9d611ba7d4de1f55ee067ba930268"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "docker/terrain/vrl_progression/rbq_vision_check_stairs.xml",
+    "new": "simulation/terrains/vrl_progression/rbq_vision_check_stairs.xml",
+    "sha256_before": "9a8e5294d2495614cd3ba51a454c22a35fa489a953d50f820c43f7cff5ce36fc",
+    "sha256_after": "9a8e5294d2495614cd3ba51a454c22a35fa489a953d50f820c43f7cff5ce36fc"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "docker/terrain/vrl_progression/rbq_environment.xml",
+    "new": "simulation/terrains/vrl_progression/rbq_environment.xml",
+    "sha256_before": "b83e437218e635336c1c326131b97c4135ec046f253d547fba5a2c8cfaf1d58f",
+    "sha256_after": "b83e437218e635336c1c326131b97c4135ec046f253d547fba5a2c8cfaf1d58f"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "docker/terrain/vrl_progression/stairs_10cm_6.xml",
+    "new": "simulation/terrains/vrl_progression/stairs_10cm_6.xml",
+    "sha256_before": "9a7ccb5a19219e4aff3408741bde8f0efdba8f5d988ef85c8cbb5131442bdadb",
+    "sha256_after": "9a7ccb5a19219e4aff3408741bde8f0efdba8f5d988ef85c8cbb5131442bdadb"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "docker/sync_mujoco/CMakeLists.txt",
+    "new": "simulation/mujoco/sync_mujoco/CMakeLists.txt",
+    "sha256_before": "e3d5bd6ad04415a36da0ffbd02ea8e41132caa96487c86a1e559df05ada3989b",
+    "sha256_after": "e3d5bd6ad04415a36da0ffbd02ea8e41132caa96487c86a1e559df05ada3989b"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "docker/sync_mujoco/BellyCaptureGroup.hpp",
+    "new": "simulation/mujoco/sync_mujoco/BellyCaptureGroup.hpp",
+    "sha256_before": "9e7c80a868e12491984550eb6b2e0a6b2c47c1936a3cb152e94b08fc48846456",
+    "sha256_after": "9e7c80a868e12491984550eb6b2e0a6b2c47c1936a3cb152e94b08fc48846456"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "docker/Dockerfile.rbq-sim",
+    "new": "simulation/mujoco/Dockerfile.rbq-sim",
+    "sha256_before": "d87ed1ec188feb8d3bd3fa6399a92e3c420acdd80670862c7c3a81d38ab48e82",
+    "sha256_after": "d87ed1ec188feb8d3bd3fa6399a92e3c420acdd80670862c7c3a81d38ab48e82"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "docker/prepare_sync_vision.py",
+    "new": "simulation/mujoco/prepare_sync_vision.py",
+    "sha256_before": "78f63303ee2efc2cac6aa5606b68a0bbed937bd3b772a892516493c0d1ab7753",
+    "sha256_after": "d839aa50dffa0a285a19d9a916c3c3a09799a8abc726851b40b666d7a51f25a1"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "pilot/src/VisionStudentThread.cpp",
+    "new": "perception/common/VisionStudentThread.cpp",
+    "sha256_before": "54a5f0d7fd88a65fc179879a0575aef56d795a5121283008baa06494ccb438fc",
+    "sha256_after": "54a5f0d7fd88a65fc179879a0575aef56d795a5121283008baa06494ccb438fc"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "pilot/src/VisionStudentThread.hpp",
+    "new": "perception/common/VisionStudentThread.hpp",
+    "sha256_before": "5dc0fa2c5301870279f71f4a6a0c04e1dea780eb3e58afed556cfa5a7bd8eb9e",
+    "sha256_after": "5dc0fa2c5301870279f71f4a6a0c04e1dea780eb3e58afed556cfa5a7bd8eb9e"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "pilot/src/StudentAgeContract.hpp",
+    "new": "perception/common/StudentAgeContract.hpp",
+    "sha256_before": "b22028817be737c88aadd05865bd32a8e9c17e0b9fc502f71333e8da14c9fcc6",
+    "sha256_after": "b22028817be737c88aadd05865bd32a8e9c17e0b9fc502f71333e8da14c9fcc6"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "pilot/src/CaptureFrameQueue.hpp",
+    "new": "perception/common/CaptureFrameQueue.hpp",
+    "sha256_before": "ed4d61c2e52edba16ce7b0587640834495b1f4fb980c8eafa9b40aabac48cb44",
+    "sha256_after": "ed4d61c2e52edba16ce7b0587640834495b1f4fb980c8eafa9b40aabac48cb44"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "pilot/src/VisionLatentGate.hpp",
+    "new": "perception/common/VisionLatentGate.hpp",
+    "sha256_before": "3edfa56ab403955f142ef217f58330fa0f91fdb07ce8121c79f4ac06c75475ff",
+    "sha256_after": "3edfa56ab403955f142ef217f58330fa0f91fdb07ce8121c79f4ac06c75475ff"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "tools/capture_stairs_vision.py",
+    "new": "experiments/runners/capture_stairs_vision.py",
+    "sha256_before": "4a50cc684858f3a04306f8e0786602f99c385394991820fd1ec457e779683880",
+    "sha256_after": "28e13f4b6a4439df5f712dc7e3b13bbe4e637bc9dca652e39e8700f4cb2f6a58"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "tools/analyze_terrain_vision_check.py",
+    "new": "experiments/analysis/analyze_terrain_vision_check.py",
+    "sha256_before": "105744e8bd5f8d694a42b2d5644047b7d1a76190854a53bb62c6daf794a96951",
+    "sha256_after": "511f9234df1c273bd6f8898124b410ba548ffc48b7c7e001ffda3f7945c94fec"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "tools/offline_walk_ab.py",
+    "new": "experiments/analysis/offline_walk_ab.py",
+    "sha256_before": "d0bb72c65d606aed2f1d445b897b4676e5df344fd133896d27c0be6e32b7f44e",
+    "sha256_after": "d0bb72c65d606aed2f1d445b897b4676e5df344fd133896d27c0be6e32b7f44e"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "tools/vision_course_ab.py",
+    "new": "experiments/runners/vision_course_ab.py",
+    "sha256_before": "d7df171a735b3ddee929c5e61d9c85ccfdee7a3a486e43f9de053b3dfa71d857",
+    "sha256_after": "d7df171a735b3ddee929c5e61d9c85ccfdee7a3a486e43f9de053b3dfa71d857"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "tools/vision_influence_counterfactual.py",
+    "new": "experiments/analysis/vision_influence_counterfactual.py",
+    "sha256_before": "52bf87ef6872bb8f1c30d82a4a4fc462f020d56d3825be24e9e63c567450b627",
+    "sha256_after": "52bf87ef6872bb8f1c30d82a4a4fc462f020d56d3825be24e9e63c567450b627"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "tools/export_safe_vrl_pair.py",
+    "new": "scripts/export_safe_vrl_pair.py",
+    "sha256_before": "2ca6c5a1d22cabae619ab8e6bde248d06cf906a69d40017cd1b22ae50d9c6046",
+    "sha256_after": "48ee365e2cbe4924efc02c92fb6daeaa40d9468e52e898045da606f76556af88"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "tools/summarize_vision_ab.py",
+    "new": "experiments/analysis/summarize_vision_ab.py",
+    "sha256_before": "3c20e3bc34060b89b2c6cb5afccb771054c11d81b074539e40c32a2f4d82b96d",
+    "sha256_after": "3c20e3bc34060b89b2c6cb5afccb771054c11d81b074539e40c32a2f4d82b96d"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "tools/terrain_vision_check.py",
+    "new": "experiments/runners/terrain_vision_check.py",
+    "sha256_before": "2c2fb2563c0049658019103f7f3ec2163e5b21b93f6174334c453266eb0ae750",
+    "sha256_after": "2c2fb2563c0049658019103f7f3ec2163e5b21b93f6174334c453266eb0ae750"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "tools/run_vision_ab.py",
+    "new": "experiments/runners/run_vision_ab.py",
+    "sha256_before": "bd1244ceacc603414062e0879069f744b8a58a15ede72ecd31c4e301430e8100",
+    "sha256_after": "9a2279fce32895f4cb2a11bb8a549a9f753ac4a1fdc5d6394a50bd26296a3f35"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "tools/repeat_course_trials.py",
+    "new": "experiments/runners/repeat_course_trials.py",
+    "sha256_before": "7ece8ff012c1b290e9d76a98427e13cd1b4640f779d2d59f9e0bbc001a13d685",
+    "sha256_after": "eb4a5d6438e31517e5f08f271d8d584f2d392a3eb66269f685d85fdb7c5b29c9"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "tools/sim_trial.py",
+    "new": "experiments/runners/sim_trial.py",
+    "sha256_before": "2f485ffe8617ef90920b416bdb060f3774dd4a78ec5d743fd83fc4f98c0d5a49",
+    "sha256_after": "0a8684fdc50f10ffd5603ea06ddfbaab083339fe33210ca8b4dd47f36d4474b3"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "tools/vision_replay_trials.py",
+    "new": "experiments/runners/vision_replay_trials.py",
+    "sha256_before": "f4186ec581cb479f0c2960d54f2c4098dd59e21f54c4cd67df79a7dad9bd1040",
+    "sha256_after": "f4186ec581cb479f0c2960d54f2c4098dd59e21f54c4cd67df79a7dad9bd1040"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "tools/deploy_sim_pair.py",
+    "new": "experiments/runners/deploy_sim_pair.py",
+    "sha256_before": "1221a8ee2209ad2d31db6549bce99196cc9fd0af71449381fe04aa6ce0dfca0b",
+    "sha256_after": "55ce33a619851c7994122f77a19699cfa53b7dffc2d0aea407bd0bba6f5c9060"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "tools/stairs_vision_ab.py",
+    "new": "experiments/runners/stairs_vision_ab.py",
+    "sha256_before": "c43970fda6894ad91a185fff9e539f0d0c50cc2ae94beab65a0509af0d2ffbb1",
+    "sha256_after": "9ac60edd1549e4cf6151f21cddb259dbcd8acd6685c13c50a7e7825073059d7d"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "tools/isaac_eval/eval_latent_sources.py",
+    "new": "experiments/isaac_eval/eval_latent_sources.py",
+    "sha256_before": "5d86e18968d99c3b51d5da9ad292f703d556ee6ecd3f1199a093c9a24372791d",
+    "sha256_after": "d18517c3e5d1b3e7a9a58708c74da86f73f6b36d1cfc57767f2a1fd99901683a"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "tools/isaac_eval/summarize_latent_sources.py",
+    "new": "experiments/isaac_eval/summarize_latent_sources.py",
+    "sha256_before": "4a470d6fe3dee228788fb2a843187a67a7fb03b347466a8f4efbe0a9b00129b9",
+    "sha256_after": "4a470d6fe3dee228788fb2a843187a67a7fb03b347466a8f4efbe0a9b00129b9"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "tools/src/student_age_contract_test.cpp",
+    "new": "tests/student_age_contract_test.cpp",
+    "sha256_before": "7da19b4258809dd822ea0e22f133f1a1e5d40b9a898ffbde664b1b2c8af4879b",
+    "sha256_after": "544cac35157b86017020e6a637c5bcff909a2073d072c498c4111ef8fcd77176"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "tools/src/vision_latent_gate_test.cpp",
+    "new": "tests/vision_latent_gate_test.cpp",
+    "sha256_before": "d03dcb7a44638845a85b6c933207e5fcc5eae6163a77d3694572bbd7a548a8a7",
+    "sha256_after": "d03dcb7a44638845a85b6c933207e5fcc5eae6163a77d3694572bbd7a548a8a7"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "tools/src/capture_frame_queue_test.cpp",
+    "new": "tests/capture_frame_queue_test.cpp",
+    "sha256_before": "b059e7bcea7a1741f815867df2e7ba92793e74889159b6063b59988da4f399b5",
+    "sha256_after": "b059e7bcea7a1741f815867df2e7ba92793e74889159b6063b59988da4f399b5"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "docs/walk-spike-isolation-2026-09-27.md",
+    "new": "docs/experiments/walk-spike-isolation-2026-09-27.md",
+    "sha256_before": "dcbeb509e9e2c7ceaa931ef7e2f25f1a83e2a602ba86f5f907bf760063e0406d",
+    "sha256_after": "53130ce73db5cf6868703df92583c2b88b4754c5f0730a6e9c02f94199518813"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "docs/rbq-vendor-setup.md",
+    "new": "docs/deployment/rbq-vendor-setup.md",
+    "sha256_before": "41af35e85fc16ac11d6a8aadc0ad612a87ea728126b1ea9db359eef95ea2dd36",
+    "sha256_after": "af956087ac6813f8282e97054cacc7d0b42ab3e8f0debf1f8719046813d588e7"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "docs/flat100-new-model-trial-2026-09-27.md",
+    "new": "docs/experiments/flat100-new-model-trial-2026-09-27.md",
+    "sha256_before": "4535c9d2aedfe75338f1d6a2a736af5121d812ac38150127ecee905ad102fd0d",
+    "sha256_after": "bd6df148abf68abfc58f572d187f619811d76d6ea9aa6359ad178d7fdda03331"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "docs/vision-input-ab-2026-09-27.md",
+    "new": "docs/experiments/vision-input-ab-2026-09-27.md",
+    "sha256_before": "b022c5430efbc2f6141d3850442e4e5314bd8e26ddf8d5d18a9040aaba5758b4",
+    "sha256_after": "e7ecce423e600fe59fc300e3959dac0ee8cbc2bcb7793850805df561f37e4939"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "docs/top1-course-trial-2026-09-27.md",
+    "new": "docs/experiments/top1-course-trial-2026-09-27.md",
+    "sha256_before": "ac46edb07841b7cf3bd7710909aedf81fd4b49e162cbac84b450967613917416",
+    "sha256_after": "ac46edb07841b7cf3bd7710909aedf81fd4b49e162cbac84b450967613917416"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "docs/vision-timing-experiment-2026-09-27.md",
+    "new": "docs/experiments/vision-timing-experiment-2026-09-27.md",
+    "sha256_before": "6ab3aa9abe7054fc4f43d78265572b9cc7fd26ff0dc0fec98f0b3b92aa7b6ba8",
+    "sha256_after": "6ab3aa9abe7054fc4f43d78265572b9cc7fd26ff0dc0fec98f0b3b92aa7b6ba8"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "docs/remote-validation-2026-09-27.md",
+    "new": "docs/experiments/remote-validation-2026-09-27.md",
+    "sha256_before": "003aa1b89d5193329ae8f8b768d46df2bed2e9f5147588b94f72218568e49935",
+    "sha256_after": "3efbdc9d284bb6ba6659527727c3f2d475475baac1f71510cc872c03ec0857eb"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "docs/arm4-policy-arm2-gains-sim-trial-2026-09-28.md",
+    "new": "docs/experiments/arm4-policy-arm2-gains-sim-trial-2026-09-28.md",
+    "sha256_before": "cc1072a39316e31a8c01114953237a55b61e6399198bdb0acceccc5c689c4b00",
+    "sha256_after": "cc1072a39316e31a8c01114953237a55b61e6399198bdb0acceccc5c689c4b00"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "docs/stairs15-six-trial-2026-09-27.md",
+    "new": "docs/experiments/stairs15-six-trial-2026-09-27.md",
+    "sha256_before": "f64528eec1aaaa4a6b1f6c849b8379e07dd200e1c4accd4c673ffe73c61d5951",
+    "sha256_after": "f64528eec1aaaa4a6b1f6c849b8379e07dd200e1c4accd4c673ffe73c61d5951"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "docs/old-new-course-comparison-2026-09-27.md",
+    "new": "docs/experiments/old-new-course-comparison-2026-09-27.md",
+    "sha256_before": "d98fc24ac05997c523982b4f87c4e632cac64431ae87f26b95aa8467d090c35d",
+    "sha256_after": "d98fc24ac05997c523982b4f87c4e632cac64431ae87f26b95aa8467d090c35d"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "docs/synthetic-plane-comparison-2026-09-27.md",
+    "new": "docs/experiments/synthetic-plane-comparison-2026-09-27.md",
+    "sha256_before": "b85e998b9542038c93d8b94ffdcff69c961979c4789ec71d69e24f7a80f0610a",
+    "sha256_after": "3ce30efc86e2cb3dfffa5fb64371c2222f19a64dc2c60598b8ef2bc11770abbf"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "docs/vision-policy-influence-2026-09-27.md",
+    "new": "docs/experiments/vision-policy-influence-2026-09-27.md",
+    "sha256_before": "b3c7053472f057d3de6a4c622ecfde2211b77546410f3e7d0029759445fac410",
+    "sha256_after": "0846661191208b3633920c6bb52b79c88f8b0055104b6b6753550b8a72457fdf"
+  },
+  {
+    "repo": "gd_rbq10_deploy_vrl",
+    "old": "docs/terrain-vision-check-2026-09-30.md",
+    "new": "docs/experiments/terrain-vision-check-2026-09-30.md",
+    "sha256_before": "2bb348d35c1ecc865d67f9fe405c8a0e77b6c6f0d7f1f793a9f0babd681443eb",
+    "sha256_after": "dae8bedf188df0ca0814e2bfe7a4027ca25a7468ad322b94699a469995eb78ea"
+  }
+]

@@ -273,7 +273,7 @@ ssh "${TARGET}" "
     cd '${DEPLOY_PATH}'
     for f in build/CAMEL-Pilot configs/cyclonedds.xml configs/hosts.env scripts/run.sh \
              extern/onnxruntime/lib/libonnxruntime.so.1 \
-             resources/policy/d_v3.6.21_b1_18/policy.onnx; do
+             resources/policy/dwb/d_v3.6.21_b1_18/policy.onnx; do
         [ -e \"\$f\" ] || { echo \"missing: \$f\"; exit 1; }
     done
     # 로더에게 직접 묻는다. 모자라는 .so 는 누가 처음 띄웠을 때에야

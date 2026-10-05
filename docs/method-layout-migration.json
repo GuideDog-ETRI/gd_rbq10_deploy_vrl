@@ -1,0 +1,141 @@
+[
+  {
+    "old": "scripts/run_sim_arm4.sh",
+    "new": "rvld/run_sim.sh",
+    "sha256": {
+      ".": "450976d90d852c2f83e4dbfb7d19318008087882ed6b9dde4f34155ba87a47b1"
+    }
+  },
+  {
+    "old": "scripts/run_sim_attention6987.sh",
+    "new": "gavd/run_sim.sh",
+    "sha256": {
+      ".": "3102b2c48d4d6828ce7555f55579088dc912f11ddcb00fee12eb7d5a68fc4c6b"
+    }
+  },
+  {
+    "old": "pilot/src/PolicyBackendVrl.cpp",
+    "new": "perception/common/PolicyBackendVrl.cpp",
+    "sha256": {
+      ".": "fd8073f722e3bdc19c3f290371b61c363f6833e9ba433162e37481c85e17ce0d"
+    }
+  },
+  {
+    "old": "pilot/src/PolicyBackendVrl.hpp",
+    "new": "perception/common/PolicyBackendVrl.hpp",
+    "sha256": {
+      ".": "cee0424e1cb7faf8a9e92917e8ac9fcc89ffe2f6c53ef54a68df9acff628144d"
+    }
+  },
+  {
+    "old": "resources/policy/vrl/.gitkeep",
+    "new": "resources/policy/rvld/legacy_unversioned/.gitkeep",
+    "sha256": {
+      ".": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  {
+    "old": "resources/policy/vrl/arm4_teacher3700_student12400",
+    "new": "resources/policy/rvld/arm4_teacher3700_student12400",
+    "sha256": {
+      "policy_vrl.onnx": "3045170cd163f806eac6dda78801e6061f0b7bddcaa3957b3011bd3896f66e36",
+      "policy_vrl_student.onnx": "74ced1ec772d36ab60fa4a3e2fcb25bb11306f96256cbade24cfd86fc5ff9b19"
+    }
+  },
+  {
+    "old": "resources/policy/vrl/arm4_teacher3879_student20000",
+    "new": "resources/policy/rvld/arm4_teacher3879_student20000",
+    "sha256": {
+      "deployment_manifest.json": "0c44aeafa90054c21280a2686ac9660fae8953994fc29fa9931248a8b9f50ee8",
+      "policy_vrl.onnx": "6770a54078475fb05aa5321674bd1cf0c3e84cc3aa27fdb3b6f7d9d7e47fec34",
+      "policy_vrl.pt": "bf1ac70122fb2d4d1028da7b373b5d0c6f3db289ba530348af050d062d138283",
+      "policy_vrl_student.onnx": "bff5de6aadee820168107d1ff3d5b8ebf706e6efda7c629dc7b66ed407bb13fa",
+      "policy_vrl_student.pt": "e3afc8948c7d442df59bd0a2f951e2fbdc3f54499cac3e89592d9300b19d2e21"
+    }
+  },
+  {
+    "old": "resources/policy/vrl/arm4_teacher4125_student20000",
+    "new": "resources/policy/rvld/arm4_teacher4125_student20000",
+    "sha256": {
+      "deployment_manifest.json": "a7dbe48c5a13748d500f54b315af07674be697075c137df691626fb2ef2d1669",
+      "policy_vrl.onnx": "e79b375b6a273599609c95b5ae10aa8926d3886a388dc129f905559c7f6cd14a",
+      "policy_vrl.pt": "b5893787df83fc8d36f33f6344d78b33c4d68d037a6d1d0aa8c3cc7731080a75",
+      "policy_vrl_student.onnx": "387e0a881812c322948d270d18076c5c1db45337fea6fa9e8d3c11e064ca4bec",
+      "policy_vrl_student.pt": "3e39e771914e5c4c713b20b68e0dbf29b1e6fb8b8c060f205dff74d20cf70390"
+    }
+  },
+  {
+    "old": "resources/policy/vrl/arm4_teacher4125_student20000_env128",
+    "new": "resources/policy/rvld/arm4_teacher4125_student20000_env128",
+    "sha256": {
+      "deployment_manifest.json": "7ebddaaffbb4c1cd4ad39004db60bb74fda9315d6d8e27a9af09d7c25ec3f8c7",
+      "policy_vrl.onnx": "e79b375b6a273599609c95b5ae10aa8926d3886a388dc129f905559c7f6cd14a",
+      "policy_vrl.pt": "b5893787df83fc8d36f33f6344d78b33c4d68d037a6d1d0aa8c3cc7731080a75",
+      "policy_vrl_student.onnx": "2f43d4dea36ae1d60d4a02535fe089e7452975297fdfc96ddce462f0ae184ca4",
+      "policy_vrl_student.pt": "7be95fe916218969828b2b16535eba2d115457b9e18bc223b7316516aa8a7487"
+    }
+  },
+  {
+    "old": "resources/policy/vrl/arm4_teacher4125_student20000_env64",
+    "new": "resources/policy/rvld/arm4_teacher4125_student20000_env64",
+    "sha256": {
+      "deployment_manifest.json": "20bda44d83c6a3a09e9b1e9605d2945d1d43237bbae54b64496a342b21aaa10d",
+      "policy_vrl.onnx": "e79b375b6a273599609c95b5ae10aa8926d3886a388dc129f905559c7f6cd14a",
+      "policy_vrl.pt": "b5893787df83fc8d36f33f6344d78b33c4d68d037a6d1d0aa8c3cc7731080a75",
+      "policy_vrl_student.onnx": "387e0a881812c322948d270d18076c5c1db45337fea6fa9e8d3c11e064ca4bec",
+      "policy_vrl_student.pt": "3e39e771914e5c4c713b20b68e0dbf29b1e6fb8b8c060f205dff74d20cf70390"
+    }
+  },
+  {
+    "old": "resources/policy/vrl/arm4_teacher5674_student20000_env128",
+    "new": "resources/policy/rvld/arm4_teacher5674_student20000_env128",
+    "sha256": {
+      "deployment_manifest.json": "2940174b76f00d0aab8059062c6e8a91c6a7dbe5264db7728e0b7ab688d56832",
+      "policy_vrl.onnx": "c4f461e296bd17cf29853ce4fdb600bd206b242c72fc0ca9c903526491b6fdde",
+      "policy_vrl.pt": "30f5790018f7113276c51b6c944f79a3b384e7e358e92e3eca06a39fcc671564",
+      "policy_vrl_student.onnx": "95b6541abdf826aa6125d146f88dd000b1325df2874ac516ca65b13a5781dafc",
+      "policy_vrl_student.pt": "f0188cf00df0cdec503153df4d63216955064f91e4682d8b584911ed6a26cf9e"
+    }
+  },
+  {
+    "old": "resources/policy/vrl/arm4_teacher6987_attention20000",
+    "new": "resources/policy/gavd/arm4_teacher6987_attention20000",
+    "sha256": {
+      "deployment_manifest.json": "7962f9500dcb371cd5733084edc15788409ff120ba83aaf02f9a3c3f035c287f",
+      "policy_vrl.onnx": "c4272c4976379d7fb9ad4c94d6a8f09a56de3fb300bf07b092438896fe82eb1e",
+      "policy_vrl.pt": "cf9fc28316da7d1b86292b269ae73fb0f325999c51d28eb767863a1c8c033cc1",
+      "policy_vrl_student.onnx": "e1c59a80b0ff42b0eb4a0549ed457339a9490ba6db69a23126854054a983155e",
+      "policy_vrl_student.pt": "997049dbf6958b0e914fa2eeaf65f20798320a86ea9fabad12dc947965d1673b"
+    }
+  },
+  {
+    "old": "resources/policy/vrl/policy_vrl.onnx",
+    "new": "resources/policy/rvld/legacy_unversioned/policy_vrl.onnx",
+    "sha256": {
+      ".": "c221636319ede3f348604c591de55104a8784fdce74e8ce4530e37bad951b7e2"
+    }
+  },
+  {
+    "old": "resources/policy/vrl/policy_vrl_student.onnx",
+    "new": "resources/policy/rvld/legacy_unversioned/policy_vrl_student.onnx",
+    "sha256": {
+      ".": "bb59e8a1eec9ba532e452843f54498a48f564ec0e3f2300d3b0d9521d0784aa3"
+    }
+  },
+  {
+    "old": "resources/policy/vrl/policy_vrl_student.pt",
+    "new": "resources/policy/rvld/legacy_unversioned/policy_vrl_student.pt",
+    "sha256": {
+      ".": "dff17ccb312e6435a871e43e08acefbe6322a8685a357062ea1339fc1ed5ae9f"
+    }
+  },
+  {
+    "old": "resources/policy/d_v3.6.21_b1_18",
+    "new": "resources/policy/dwb/d_v3.6.21_b1_18",
+    "sha256": {
+      "context.json": "44bd45aed64ed8312631f9ef7ac46b144f651133ece89596d3d1af2b94f5f770",
+      "deploy.json": "d4e6537997a313ec280a0b391421cddc7d6fd1a6f562c52dc1919d9435b5a796",
+      "policy.onnx": "56f67feda61963215a8cce6651600c1b5164b667c602d55451868ac5d4b5fcbf"
+    }
+  }
+]

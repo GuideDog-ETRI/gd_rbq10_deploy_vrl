@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mujoco model="10cm gap 1m after spawn">
+  <statistic center="4 0 0.35" extent="7"/>
+  <visual><headlight diffuse="0.7 0.7 0.7" ambient="0.25 0.25 0.25"/><global azimuth="-125" elevation="-22"/></visual>
+  <default><default class="course"><geom type="box" friction="0.8 0.8 0.8" priority="2" contype="1" conaffinity="1"/></default>
+    <default class="guard"><geom type="box" friction="0.3 0.005 0.0001" contype="1" conaffinity="1" rgba="0.55 0.8 0.95 0.18"/></default></default>
+  <worldbody>
+    <light pos="4 0 8" dir="0 0 -1" directional="true"/>
+    <!-- Spawn is near x=0. The gap near edge is exactly x=1.0m. -->
+    <geom name="gap_start_flat" class="course" pos="-5.500 0 -0.750" size="6.500 0.900 0.750" rgba="0.22 0.42 0.28 1"/>
+    <geom name="gap_10cm_bottom" class="course" pos="1.050 0 -1.600" size="0.050 0.900 0.100" rgba="0.55 0.18 0.16 1"/>
+    <geom name="gap_finish_flat" class="course" pos="6.550 0 -0.750" size="5.450 0.900 0.750" rgba="0.22 0.42 0.28 1"/>
+    <geom name="guard_left" class="guard" pos="4.000 0.960 0.250" size="8.000 0.060 1.750"/>
+    <geom name="guard_right" class="guard" pos="4.000 -0.960 0.250" size="8.000 0.060 1.750"/>
+    <geom name="guard_start" class="guard" pos="-12.060 0 0.250" size="0.060 1.020 1.750"/>
+    <geom name="guard_finish" class="guard" pos="12.060 0 0.250" size="0.060 1.020 1.750"/>
+  </worldbody>
+  <contact>
+    <pair geom1="RR" geom2="gap_start_flat"/><pair geom1="RL" geom2="gap_start_flat"/><pair geom1="FR" geom2="gap_start_flat"/><pair geom1="FL" geom2="gap_start_flat"/>
+    <pair geom1="RR" geom2="gap_10cm_bottom"/><pair geom1="RL" geom2="gap_10cm_bottom"/><pair geom1="FR" geom2="gap_10cm_bottom"/><pair geom1="FL" geom2="gap_10cm_bottom"/>
+    <pair geom1="RR" geom2="gap_finish_flat"/><pair geom1="RL" geom2="gap_finish_flat"/><pair geom1="FR" geom2="gap_finish_flat"/><pair geom1="FL" geom2="gap_finish_flat"/>
+  </contact>
+</mujoco>

@@ -22,8 +22,8 @@
 #
 # DDS 는 전부 lo 에 고정한다. 이 스크립트는 "모든 것이 이 한 대에서" 구성이고,
 # hosts.env 의 랩 주소로 라우팅하면 실제 NIC 가 잡혀서 sim 과 Pilot 이 서로 못
-# 찾는다 (docker/rbq_sim.sh 의 경고 주석 참고). 분산 구성은 이 스크립트가 아니라
-# docker/rbq_sim.sh 와 Pilot 을 직접 띄운다.
+# 찾는다 (simulation/mujoco/rbq_sim.sh 의 경고 주석 참고). 분산 구성은 이 스크립트가 아니라
+# simulation/mujoco/rbq_sim.sh 와 Pilot 을 직접 띄운다.
 #
 # Mujoco 는 RBQ_SIM_VISION=0 으로 띄운다 — 시뮬 카메라 6개는 비전 파이프라인용인데
 # Pilot 에는 비전이 없다. GPU 만 먹는다. 필요하면 RBQ_SIM_VISION=1 로 덮어쓴다.
@@ -36,6 +36,14 @@ BUILD_DIR="${BUILD_DIR:-${REPO_DIR}/build}"
 
 PILOT_TCP=19100
 PILOT_BEACON=19101
+SIM_WINDOW_ROLE="rbq10-sim-vrl-blind"
+source "$SCRIPT_DIR/sim_windows.sh"
+
+if [[ "${1:-}" == --check ]]; then
+    policy="${RBQ_POLICY_FILE:-dwb/d_v3.6.21_b1_18}"
+    [[ "$policy" = /* ]] || policy="$REPO_DIR/resources/policy/$policy"
+    exec "$BUILD_DIR/tools/policy-check" "$policy"
+fi
 
 # ---- stop: 역순으로 정리 ----------------------------------------------------
 # 콘솔·Pilot 은 호스트 프로세스라 pkill, 컨테이너 쪽은 rbq_sim.sh stop 이
@@ -47,9 +55,10 @@ if [ "${1:-}" = "stop" ]; then
     pkill -f '^pilot-sim-watchdog' 2>/dev/null || true
     pkill -x CAMEL-Console 2>/dev/null || true
     pkill -x CAMEL-Pilot   2>/dev/null || true
-    bash "${REPO_DIR}/docker/rbq_sim.sh" stop all 2>/dev/null || true
+    bash "${REPO_DIR}/simulation/mujoco/rbq_sim.sh" stop all 2>/dev/null || true
     pkill -f 'pilot-run-[^/]*/(motion|mujoco|pilot)\.sh|^pilot-tab$' 2>/dev/null || true
     echo "[run_sim] done."
+    close_sim_windows
     exit 0
 fi
 
@@ -94,7 +103,7 @@ pkill -KILL -x CAMEL-Console 2>/dev/null || true
 # up 은 멱등이다 (있으면 start 만 한다). 탭들이 각자 하게 두지 않고 여기서 한 번
 # 해 두면, 탭 셋이 동시에 컨테이너 생성을 경합하는 일이 없다.
 echo "[run_sim] container up..."
-IFACE=lo bash "${REPO_DIR}/docker/rbq_sim.sh" up
+IFACE=lo bash "${REPO_DIR}/simulation/mujoco/rbq_sim.sh" up
 
 mkdir -p "${REPO_DIR}/logs"
 
@@ -110,7 +119,7 @@ TAB_DIR="$(mktemp -d -t pilot-run-XXXXXX)"
 # Ctrl+C 로 끄거나 앱이 죽으면 그걸로 끝이다 — 되살아나지 않는다.
 cat > "${TAB_DIR}/motion.sh" <<EOF
 #!/bin/bash
-IFACE=lo bash '${REPO_DIR}/docker/rbq_sim.sh' motion
+IFACE=lo bash '${REPO_DIR}/simulation/mujoco/rbq_sim.sh' motion
 echo; echo '[run_sim] Motion exited. Tab kept open — Ctrl+D to close.'
 exec -a pilot-tab bash
 EOF
@@ -127,7 +136,7 @@ done
 if ! docker exec rbq-sim pgrep -x Motion >/dev/null 2>&1; then
     echo '[run_sim] Motion never came up — check its tab.'
 else
-    RBQ_SIM_VISION=\${RBQ_SIM_VISION:-0} IFACE=lo bash '${REPO_DIR}/docker/rbq_sim.sh' mujoco
+    RBQ_SIM_VISION=\${RBQ_SIM_VISION:-0} IFACE=lo bash '${REPO_DIR}/simulation/mujoco/rbq_sim.sh' mujoco
 fi
 echo; echo '[run_sim] Mujoco exited. Tab kept open — Ctrl+D to close.'
 exec -a pilot-tab bash
@@ -161,7 +170,7 @@ chmod +x "${TAB_DIR}"/*.sh
 # 창"에 붙는데 세 호출이 그 자리를 경합한다). -e 는 deprecated 지만 탭마다 다른
 # 명령을 주는 유일한 방법이고 3.52 에서 여전히 동작한다.
 gnome-terminal \
-    --window --title="Motion (sim)" -e "${TAB_DIR}/motion.sh" \
+    --window --role="$SIM_WINDOW_ROLE" --title="Motion (sim)" -e "${TAB_DIR}/motion.sh" \
     --tab    --title="Mujoco"       -e "${TAB_DIR}/mujoco.sh" \
     --tab    --title="CAMEL-Pilot"  -e "${TAB_DIR}/pilot.sh"
 

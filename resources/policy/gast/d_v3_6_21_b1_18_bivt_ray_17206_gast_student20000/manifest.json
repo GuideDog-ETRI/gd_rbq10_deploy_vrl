@@ -1,0 +1,218 @@
+{
+  "status": "offline_parity_passed_simulation_ready_NOT_smoke_tested",
+  "model_bundle": "d_v3_6_21_b1_18_bivt_ray_17206_gast_student20000",
+  "student_iteration": 20000,
+  "student_arch": "gast_spatiotemporal_v1",
+  "student_checkpoint_sha256": "d64f3788d1f319e1b125ed3922d5bb360d42497b87a2bb98635afeb5692f36f9",
+  "teacher_checkpoint": "/home/user/gd_project/gd_lab_vrl/logs/vision_rbq10_dreamwaq/arm_4/2026-10-03_18-52-19_dwb_v3_6_21_b1_18_ray_20k_1024_resume2000r1_20261003/best_top5/17206_top1.pt",
+  "teacher_sha256": "a70adbda5b73925f5936eaef27ee3b33686d9f7489486afdda9bf40ddb0c326d",
+  "student_config": {
+    "camera_profile": "vendor_legacy"
+  },
+  "gast_contract": {
+    "external_gap_signal": false,
+    "pose": "xy_yaw_wxyz",
+    "hidden_dim": 6116
+  },
+  "camera_contract": {
+    "profile": "vendor_legacy",
+    "positions": [
+      [
+        0.36462,
+        0,
+        -0.02663
+      ],
+      [
+        0.26053,
+        0,
+        -0.04759
+      ],
+      [
+        -0.19515,
+        0.0065,
+        -0.04832
+      ],
+      [
+        -0.35299,
+        -1.1e-05,
+        -0.02051
+      ]
+    ],
+    "quaternions_opengl": [
+      [
+        0,
+        0.8191608,
+        0,
+        -0.5735639
+      ],
+      [
+        0,
+        -0.6156417,
+        0,
+        0.7880262
+      ],
+      [
+        0,
+        -0.7071046,
+        0,
+        0.707109
+      ],
+      [
+        0.4993997,
+        0.0263259,
+        0.8647709,
+        -0.0455865
+      ]
+    ],
+    "sensor_size_m": [
+      0.003663,
+      0.0021396
+    ],
+    "focal_m": 0.00193,
+    "width": 80,
+    "height": 45,
+    "source_resolution": [
+      640,
+      360
+    ],
+    "depth_clip": [
+      0.15,
+      5.0
+    ],
+    "period_steps": 8,
+    "policy_dt": 0.01,
+    "render_height": 48,
+    "schema_version": 1,
+    "terrain_observation_version": 2,
+    "camera_names": [
+      "front_depth_camera0",
+      "front_depth_camera1",
+      "hind_depth_camera2",
+      "hind_depth_camera3"
+    ],
+    "channels": [
+      "depth",
+      "ir_proxy"
+    ],
+    "depth_semantics": "optical_axis_metres",
+    "quaternion_order": "wxyz",
+    "fov_degrees": [
+      86.99994958511454,
+      57.999251984409135
+    ],
+    "fx": 42.15124215124215,
+    "fy": 40.59169938306225,
+    "cx": 40.0,
+    "cy": 22.5,
+    "frame_shape": [
+      1,
+      4,
+      2,
+      45,
+      80
+    ]
+  },
+  "student_recurrent_parity": [
+    {
+      "case": "normal",
+      "max_abs_error": 1.1622905731201172e-06
+    },
+    {
+      "case": "move",
+      "max_abs_error": 1.6801059246063232e-06
+    },
+    {
+      "case": "rotate",
+      "max_abs_error": 1.5795230865478516e-06
+    },
+    {
+      "case": "missing",
+      "max_abs_error": 1.6391277313232422e-06
+    },
+    {
+      "case": "stale",
+      "max_abs_error": 1.475214958190918e-06
+    },
+    {
+      "case": "old",
+      "max_abs_error": 1.341104507446289e-06
+    },
+    {
+      "case": "reset",
+      "max_abs_error": 1.2814998626708984e-06
+    },
+    {
+      "case": "normal",
+      "max_abs_error": 1.6726553440093994e-06
+    },
+    {
+      "case": "move",
+      "max_abs_error": 1.3560056686401367e-06
+    },
+    {
+      "case": "rotate",
+      "max_abs_error": 1.5944242477416992e-06
+    },
+    {
+      "case": "missing",
+      "max_abs_error": 1.1026859283447266e-06
+    },
+    {
+      "case": "stale",
+      "max_abs_error": 1.1920928955078125e-06
+    },
+    {
+      "case": "old",
+      "max_abs_error": 1.519918441772461e-06
+    },
+    {
+      "case": "reset",
+      "max_abs_error": 1.0579824447631836e-06
+    },
+    {
+      "case": "normal",
+      "max_abs_error": 1.2814998626708984e-06
+    },
+    {
+      "case": "move",
+      "max_abs_error": 1.8477439880371094e-06
+    },
+    {
+      "case": "rotate",
+      "max_abs_error": 1.4603137969970703e-06
+    },
+    {
+      "case": "missing",
+      "max_abs_error": 1.1436641216278076e-06
+    },
+    {
+      "case": "stale",
+      "max_abs_error": 1.2814998626708984e-06
+    },
+    {
+      "case": "old",
+      "max_abs_error": 1.9669532775878906e-06
+    },
+    {
+      "case": "reset",
+      "max_abs_error": 1.341104507446289e-06
+    }
+  ],
+  "student_max_abs_error": 1.9669532775878906e-06,
+  "actor_cenet_exact_teacher_weights": true,
+  "actor_max_abs_error": 4.827976226806641e-06,
+  "deployment_hashes": {
+    "policy_vrl.onnx": "a5a55ca64eeaf6a7e300344714d2a45c6049080120fb34fbbfa9432db19c9949",
+    "policy_vrl_student.onnx": "eefacf9a251318741f9e0532030702fcdbb09f31062e72d522f3ff55ef92bd99",
+    "student_gast.onnx": "eefacf9a251318741f9e0532030702fcdbb09f31062e72d522f3ff55ef92bd99",
+    "policy_vrl.pt": "fcf78dc0377e12f798d15ccd8fb4001cecd62b8c487724c7de3f408aeecae13e",
+    "student_checkpoint.pt": "d64f3788d1f319e1b125ed3922d5bb360d42497b87a2bb98635afeb5692f36f9",
+    "teacher_checkpoint.pt": "a70adbda5b73925f5936eaef27ee3b33686d9f7489486afdda9bf40ddb0c326d"
+  },
+  "limitations": [
+    "Offline ONNX parity only; no MuJoCo rollout was run by this exporter.",
+    "Loopback simulation only; no physical robot or external NIC validation.",
+    "IR is the simulator's RGB-luminance proxy, not physical IR sensor simulation.",
+    "Top-5 and S_online are training-rollout proxies, not held-out gap/stair validation."
+  ]
+}
