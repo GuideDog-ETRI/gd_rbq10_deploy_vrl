@@ -361,6 +361,18 @@ class Launchers(unittest.TestCase):
             self.assertEqual((ROOT / runtime / "scripts/export_safe_vrl_pair.py").read_bytes(),
                              (ROOT / "scripts/export_safe_vrl_pair.py").read_bytes())
 
+    def test_runtime_pilots_match_the_shared_teacher_scan_constructor(self):
+        # gast/runtime/cvtt is a symlink to the root cvtt/, so its VisionStudentThread copy must pass the
+        # camera profile exactly like the root one (bivt/oracle_runtime keeps its own legacy cvtt copy).
+        for runtime in ("", "gast/runtime/"):
+            with self.subTest(runtime=runtime or "root"):
+                source = (ROOT / runtime / "perception/common/VisionStudentThread.cpp").read_text()
+                self.assertIn("std::make_unique<CvttTerrainScan>(xml, cameras)", source)
+                self.assertIn("resolveCameraProfile(", source)
+                self.assertEqual((ROOT / runtime / "perception/common/CameraProfile.hpp").read_bytes(),
+                                 (ROOT / "perception/common/CameraProfile.hpp").read_bytes())
+        self.assertTrue((ROOT / "gast/runtime/cvtt").is_symlink())
+
     def test_gast_launcher_checks_cameras_before_its_ownership_marker(self):
         text = (ROOT / "gast/deploy/d_v3.6.21_b1_18_bivt-ray/run_sim_common.sh").read_text()
         run_part = text.split("esac", 2)[-1]

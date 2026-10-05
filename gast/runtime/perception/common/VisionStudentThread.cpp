@@ -1,5 +1,6 @@
 #include "VisionStudentThread.hpp"
 #include "BavrlCameraContract.hpp"
+#include "CameraProfile.hpp"
 #include "StudentAgeContract.hpp"
 #include "../../cvtt/perception/CvttTerrainScan.hpp"
 
@@ -104,6 +105,13 @@ VisionStudentThread::VisionStudentThread(const std::string& studentOnnxPath, int
             << "GAST explicit age, capture-aligned world pose, hidden6116 (loopback only)";
 
         m_teacherMode = m_session->GetInputCount() == 1 && m_session->GetOutputCount() == 1;
+        // Both modes read the BT0-BT3 depth images (the teacher scan for its
+        // visibility mask), so the model's cameras must be these cameras.
+        auto cameraTag = metadata.LookupCustomMetadataMapAllocated(kCameraProfileMetadataKey, allocator);
+        const CameraProfile& cameras = resolveCameraProfile(cameraTag ? cameraTag.get() : nullptr,
+                                                            loopbackSimulationOnly());
+        FILE_LOG_AS(logINFO, "RLWALK") << "vision camera profile: " << cameras.name
+            << (cameraTag ? "" : " (model predates camel.camera_profile; legacy replay)");
         if (m_teacherMode) {
             if (!loopbackSimulationOnly()) {
                 FILE_LOG_AS(logERROR, "RLWALK") << "CVTT teacher scan refused outside loopback --sim";
@@ -114,7 +122,7 @@ VisionStudentThread::VisionStudentThread(const std::string& studentOnnxPath, int
                 FILE_LOG_AS(logERROR, "RLWALK") << "RBQ_CVTT_TERRAIN_XML required";
                 return;
             }
-            m_teacherScan = std::make_unique<CvttTerrainScan>(xml);
+            m_teacherScan = std::make_unique<CvttTerrainScan>(xml, cameras);
             const auto scanShape = m_session->GetInputTypeInfo(0).GetTensorTypeAndShapeInfo().GetShape();
             const auto latentShape = m_session->GetOutputTypeInfo(0).GetTensorTypeAndShapeInfo().GetShape();
             if (!shapeMatches(scanShape, {1, 374}) || !shapeMatches(latentShape, {1, kLatentDim})) {
