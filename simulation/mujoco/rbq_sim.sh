@@ -198,7 +198,7 @@ cmd_up() {
             ${DOCKER} rename "${CONTAINER}" "$backup_name"
             echo "[info] ${CONTAINER} saw deleted host files (stale bind mount); preserved it as $backup_name and recreating."
         else
-            return
+            return 0  # a bare `return` would return the failed `! mounts_live` test and abort the launcher
         fi
     fi
 
