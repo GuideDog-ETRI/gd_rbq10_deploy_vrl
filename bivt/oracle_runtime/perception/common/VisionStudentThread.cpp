@@ -2,6 +2,7 @@
 #include "BavrlCameraContract.hpp"
 #include "StudentAgeContract.hpp"
 #include "../../cvtt/perception/CvttTerrainScan.hpp"
+#include "GastTerrainMemory.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -103,7 +104,9 @@ VisionStudentThread::VisionStudentThread(const std::string& studentOnnxPath, int
         FILE_LOG_AS(logINFO, "RLWALK") << "vision frame-age contract: "
             << "GAST explicit age, capture-aligned world pose, hidden6116 (loopback only)";
 
-        m_teacherMode = m_session->GetInputCount() == 1 && m_session->GetOutputCount() == 1;
+        // GAST teacher encoder: (frames, poses, pose, ages) -> terrain_latent; see GastTerrainMemory.hpp.
+        m_gastMode = m_session->GetInputCount() == 4 && m_session->GetOutputCount() == 1;
+        m_teacherMode = (m_session->GetInputCount() == 1 || m_gastMode) && m_session->GetOutputCount() == 1;
         if (m_teacherMode) {
             if (!loopbackSimulationOnly()) {
                 FILE_LOG_AS(logERROR, "RLWALK") << "CVTT teacher scan refused outside loopback --sim";
@@ -114,10 +117,31 @@ VisionStudentThread::VisionStudentThread(const std::string& studentOnnxPath, int
                 FILE_LOG_AS(logERROR, "RLWALK") << "RBQ_CVTT_TERRAIN_XML required";
                 return;
             }
-            m_teacherScan = std::make_unique<CvttTerrainScan>(xml);
+            const char* profile = std::getenv("RBQ_CAMERA_PROFILE");  // set by run_sim_vrl.sh after the pair check
+            try {
+                m_teacherScan = std::make_unique<CvttTerrainScan>(xml, profile && *profile ? profile : "vendor_new");
+            } catch (const std::exception& e) {
+                FILE_LOG_AS(logERROR, "RLWALK") << e.what();
+                return;
+            }
+            FILE_LOG_AS(logINFO, "RLWALK") << "CVTT teacher scan cameras: "
+                << (profile && *profile ? profile : "vendor_new (default)");
             const auto scanShape = m_session->GetInputTypeInfo(0).GetTensorTypeAndShapeInfo().GetShape();
             const auto latentShape = m_session->GetOutputTypeInfo(0).GetTensorTypeAndShapeInfo().GetShape();
-            if (!shapeMatches(scanShape, {1, 374}) || !shapeMatches(latentShape, {1, kLatentDim})) {
+            if (m_gastMode) {
+                const auto shape = [this](int i) {
+                    return m_session->GetInputTypeInfo(i).GetTensorTypeAndShapeInfo().GetShape(); };
+                if (!shapeMatches(shape(0), {1, GastTerrainMemory::kInputs, GastTerrainMemory::kScan}) ||
+                    !shapeMatches(shape(1), {1, GastTerrainMemory::kInputs, 3}) ||
+                    !shapeMatches(shape(2), {1, 3}) || !shapeMatches(shape(3), {1, GastTerrainMemory::kInputs}) ||
+                    !shapeMatches(latentShape, {1, kLatentDim})) {
+                    FILE_LOG_AS(logERROR, "RLWALK") << "GAST teacher encoder requires frames[1,8,374], poses[1,8,3], "
+                        "pose[1,3], ages[1,8] -> latent[1,32]";
+                    return;
+                }
+                m_gastMemory = std::make_unique<GastTerrainMemory>();
+                FILE_LOG_AS(logINFO, "RLWALK") << "GAST teacher oracle: full height grid + 8-step memory (no cameras)";
+            } else if (!shapeMatches(scanShape, {1, 374}) || !shapeMatches(latentShape, {1, kLatentDim})) {
                 FILE_LOG_AS(logERROR, "RLWALK") << "CVTT teacher encoder requires scan[1,374] -> latent[1,32]";
                 return;
             }
@@ -448,6 +472,16 @@ void VisionStudentThread::studentLoop(int updatePeriodMs) {
 
         if (m_resetRequested.exchange(false, std::memory_order_acq_rel)) {
             m_hidden.fill(0.f);
+            if (m_gastMemory) m_gastMemory->reset();
+        }
+
+        if (m_gastMode) {
+            // GAST teacher oracle: no camera frames. Every 10 ms (the training policy step) take the
+            // newest simulator pose, read the full course grid, step the 100 ms memory, encode.
+            gastStep(mem, tick);
+            const auto elapsed = std::chrono::steady_clock::now() - tickStart;
+            if (elapsed < std::chrono::milliseconds(10)) std::this_thread::sleep_for(std::chrono::milliseconds(10) - elapsed);
+            continue;
         }
 
         bool haveFrames = false;
@@ -655,5 +689,51 @@ void VisionStudentThread::studentLoop(int updatePeriodMs) {
         const auto elapsed = std::chrono::steady_clock::now() - tickStart;
         const auto target  = std::chrono::milliseconds(updatePeriodMs);
         if (elapsed < target) std::this_thread::sleep_for(target - elapsed);
+    }
+}
+
+void VisionStudentThread::gastStep(const Ort::MemoryInfo& mem, int& tick) {
+    TimedPose latest{};
+    {
+        std::lock_guard<std::mutex> lock(m_poseMtx);
+        if (m_poses.empty()) return;
+        latest = m_poses.back();
+    }
+    const int64_t now = nowMs();
+    if (now - latest.stampMs > 50 ||
+        !std::all_of(latest.pos.begin(), latest.pos.end(), [](float v){ return std::isfinite(v); }) ||
+        !std::all_of(latest.quat.begin(), latest.quat.end(), [](float v){ return std::isfinite(v); })) return;
+    try {
+        const auto scan = m_teacherScan->observeFull({latest.pos, latest.quat});
+        const auto& q = latest.quat;  // wxyz
+        const float yaw = std::atan2(2 * (q[0]*q[3] + q[1]*q[2]), 1 - 2 * (q[2]*q[2] + q[3]*q[3]));
+        auto in = m_gastMemory->step(latest.stampMs, scan, {latest.pos[0], latest.pos[1], yaw});
+        const int valid = std::count(scan.begin() + CvttTerrainScan::kPoints, scan.end(), 1.f);
+        if (tick++ % 200 == 0)
+            FILE_LOG_AS(logINFO, "RLWALK") << "GAST teacher scan valid=" << valid << "/187 memory="
+                << m_gastMemory->size() << " oldest_age=" << in.ages[0] << " pose_age_ms=" << now - latest.stampMs;
+        const std::array<int64_t, 3> framesShape{1, GastTerrainMemory::kInputs, GastTerrainMemory::kScan};
+        const std::array<int64_t, 3> posesShape{1, GastTerrainMemory::kInputs, 3};
+        const std::array<int64_t, 2> poseShape{1, 3}, agesShape{1, GastTerrainMemory::kInputs};
+        std::array<Ort::Value, 4> inputs{
+            Ort::Value::CreateTensor<float>(mem, in.frames.data(), in.frames.size(), framesShape.data(), 3),
+            Ort::Value::CreateTensor<float>(mem, in.poses.data(), in.poses.size(), posesShape.data(), 3),
+            Ort::Value::CreateTensor<float>(mem, in.pose.data(), in.pose.size(), poseShape.data(), 2),
+            Ort::Value::CreateTensor<float>(mem, in.ages.data(), in.ages.size(), agesShape.data(), 2)};
+        static const char* names[] = {"frames", "poses", "pose", "ages"};
+        static const char* outputs[] = {"terrain_latent"};
+        auto outs = m_session->Run(Ort::RunOptions{nullptr}, names, inputs.data(), 4, outputs, 1);
+        const float* latent = outs[0].GetTensorMutableData<float>();
+        if (!std::all_of(latent, latent + kLatentDim, [](float v){ return std::isfinite(v); })) return;
+        std::lock_guard<std::mutex> lock(m_latentMtx);
+        if (m_resetRequested.load(std::memory_order_acquire)) return;
+        // A no-valid-cell scan gives an exact zero latent, as in training (not "no latent").
+        std::memcpy(m_latentOut.data(), latent, sizeof(float) * kLatentDim);
+        m_haveLatent = true;
+        m_latentStampMs = latest.stampMs;
+    } catch (const Ort::Exception& e) {
+        FILE_LOG_AS(logERROR, "RLWALK") << "GAST teacher inference failed: " << e.what();
+    } catch (const std::exception& e) {
+        FILE_LOG_AS(logERROR, "RLWALK") << "GAST teacher scan failed: " << e.what();
     }
 }

@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mujoco model="stairs push terrain">
+  <!-- +X: flat to x=6, 10 steps up (15 cm rise, 30 cm tread), 2 m top, 10 steps down, flat to x=20.0. Up steps x=6.0-9.0, top 9.0-11.0, down 11.0-14.0. -->
+  <statistic center="10.00 0 0.8" extent="14.0"/>
+  <visual>
+    <headlight diffuse="0.7 0.7 0.7" ambient="0.25 0.25 0.25"/>
+    <global azimuth="-125" elevation="-22"/>
+  </visual>
+  <default>
+    <default class="course">
+      <geom type="box" friction="0.8 0.8 0.8" priority="2" contype="1" conaffinity="1"/>
+    </default>
+    <default class="guard">
+      <geom type="box" friction="0.3 0.005 0.0001" contype="1" conaffinity="1" rgba="0.55 0.8 0.95 0.18"/>
+    </default>
+  </default>
+  <worldbody>
+    <light pos="10.0 0 8" dir="0 0 -1" directional="true"/>
+    <geom name="start_flat" class="course" pos="1.000 0 -0.750" size="5.000 0.90 0.750" rgba="0.22 0.42 0.28 1"/>
+    <geom name="up1" class="course" pos="6.150 0 -0.675" size="0.150 0.90 0.825" rgba="0.42 0.42 0.46 1"/>
+    <geom name="up2" class="course" pos="6.450 0 -0.600" size="0.150 0.90 0.900" rgba="0.42 0.42 0.46 1"/>
+    <geom name="up3" class="course" pos="6.750 0 -0.525" size="0.150 0.90 0.975" rgba="0.42 0.42 0.46 1"/>
+    <geom name="up4" class="course" pos="7.050 0 -0.450" size="0.150 0.90 1.050" rgba="0.42 0.42 0.46 1"/>
+    <geom name="up5" class="course" pos="7.350 0 -0.375" size="0.150 0.90 1.125" rgba="0.42 0.42 0.46 1"/>
+    <geom name="up6" class="course" pos="7.650 0 -0.300" size="0.150 0.90 1.200" rgba="0.42 0.42 0.46 1"/>
+    <geom name="up7" class="course" pos="7.950 0 -0.225" size="0.150 0.90 1.275" rgba="0.42 0.42 0.46 1"/>
+    <geom name="up8" class="course" pos="8.250 0 -0.150" size="0.150 0.90 1.350" rgba="0.42 0.42 0.46 1"/>
+    <geom name="up9" class="course" pos="8.550 0 -0.075" size="0.150 0.90 1.425" rgba="0.42 0.42 0.46 1"/>
+    <geom name="up10" class="course" pos="8.850 0 0.000" size="0.150 0.90 1.500" rgba="0.42 0.42 0.46 1"/>
+    <geom name="top" class="course" pos="10.000 0 0.000" size="1.000 0.90 1.500" rgba="0.22 0.42 0.28 1"/>
+    <geom name="down1" class="course" pos="11.150 0 -0.075" size="0.150 0.90 1.425" rgba="0.42 0.42 0.46 1"/>
+    <geom name="down2" class="course" pos="11.450 0 -0.150" size="0.150 0.90 1.350" rgba="0.42 0.42 0.46 1"/>
+    <geom name="down3" class="course" pos="11.750 0 -0.225" size="0.150 0.90 1.275" rgba="0.42 0.42 0.46 1"/>
+    <geom name="down4" class="course" pos="12.050 0 -0.300" size="0.150 0.90 1.200" rgba="0.42 0.42 0.46 1"/>
+    <geom name="down5" class="course" pos="12.350 0 -0.375" size="0.150 0.90 1.125" rgba="0.42 0.42 0.46 1"/>
+    <geom name="down6" class="course" pos="12.650 0 -0.450" size="0.150 0.90 1.050" rgba="0.42 0.42 0.46 1"/>
+    <geom name="down7" class="course" pos="12.950 0 -0.525" size="0.150 0.90 0.975" rgba="0.42 0.42 0.46 1"/>
+    <geom name="down8" class="course" pos="13.250 0 -0.600" size="0.150 0.90 0.900" rgba="0.42 0.42 0.46 1"/>
+    <geom name="down9" class="course" pos="13.550 0 -0.675" size="0.150 0.90 0.825" rgba="0.42 0.42 0.46 1"/>
+    <geom name="down10" class="course" pos="13.850 0 -0.750" size="0.150 0.90 0.750" rgba="0.42 0.42 0.46 1"/>
+    <geom name="finish_flat" class="course" pos="17.000 0 -0.750" size="3.000 0.90 0.750" rgba="0.22 0.42 0.28 1"/>
+    <geom name="guard_left" class="guard" pos="8.000 0.96 1.0" size="12.000 0.06 2.5"/>
+    <geom name="guard_right" class="guard" pos="8.000 -0.96 1.0" size="12.000 0.06 2.5"/>
+    <geom name="guard_start" class="guard" pos="-4.06 0 1.0" size="0.06 1.02 2.5"/>
+    <geom name="guard_finish" class="guard" pos="20.06 0 1.0" size="0.06 1.02 2.5"/>
+  </worldbody>
+  <contact>
+    <pair geom1="RR" geom2="start_flat"/>
+    <pair geom1="RL" geom2="start_flat"/>
+    <pair geom1="FR" geom2="start_flat"/>
+    <pair geom1="FL" geom2="start_flat"/>
+    <pair geom1="RR" geom2="up1"/>
+    <pair geom1="RL" geom2="up1"/>
+    <pair geom1="FR" geom2="up1"/>
+    <pair geom1="FL" geom2="up1"/>
+    <pair geom1="RR" geom2="up2"/>
+    <pair geom1="RL" geom2="up2"/>
+    <pair geom1="FR" geom2="up2"/>
+    <pair geom1="FL" geom2="up2"/>
+    <pair geom1="RR" geom2="up3"/>
+    <pair geom1="RL" geom2="up3"/>
+    <pair geom1="FR" geom2="up3"/>
+    <pair geom1="FL" geom2="up3"/>
+    <pair geom1="RR" geom2="up4"/>
+    <pair geom1="RL" geom2="up4"/>
+    <pair geom1="FR" geom2="up4"/>
+    <pair geom1="FL" geom2="up4"/>
+    <pair geom1="RR" geom2="up5"/>
+    <pair geom1="RL" geom2="up5"/>
+    <pair geom1="FR" geom2="up5"/>
+    <pair geom1="FL" geom2="up5"/>
+    <pair geom1="RR" geom2="up6"/>
+    <pair geom1="RL" geom2="up6"/>
+    <pair geom1="FR" geom2="up6"/>
+    <pair geom1="FL" geom2="up6"/>
+    <pair geom1="RR" geom2="up7"/>
+    <pair geom1="RL" geom2="up7"/>
+    <pair geom1="FR" geom2="up7"/>
+    <pair geom1="FL" geom2="up7"/>
+    <pair geom1="RR" geom2="up8"/>
+    <pair geom1="RL" geom2="up8"/>
+    <pair geom1="FR" geom2="up8"/>
+    <pair geom1="FL" geom2="up8"/>
+    <pair geom1="RR" geom2="up9"/>
+    <pair geom1="RL" geom2="up9"/>
+    <pair geom1="FR" geom2="up9"/>
+    <pair geom1="FL" geom2="up9"/>
+    <pair geom1="RR" geom2="up10"/>
+    <pair geom1="RL" geom2="up10"/>
+    <pair geom1="FR" geom2="up10"/>
+    <pair geom1="FL" geom2="up10"/>
+    <pair geom1="RR" geom2="top"/>
+    <pair geom1="RL" geom2="top"/>
+    <pair geom1="FR" geom2="top"/>
+    <pair geom1="FL" geom2="top"/>
+    <pair geom1="RR" geom2="down1"/>
+    <pair geom1="RL" geom2="down1"/>
+    <pair geom1="FR" geom2="down1"/>
+    <pair geom1="FL" geom2="down1"/>
+    <pair geom1="RR" geom2="down2"/>
+    <pair geom1="RL" geom2="down2"/>
+    <pair geom1="FR" geom2="down2"/>
+    <pair geom1="FL" geom2="down2"/>
+    <pair geom1="RR" geom2="down3"/>
+    <pair geom1="RL" geom2="down3"/>
+    <pair geom1="FR" geom2="down3"/>
+    <pair geom1="FL" geom2="down3"/>
+    <pair geom1="RR" geom2="down4"/>
+    <pair geom1="RL" geom2="down4"/>
+    <pair geom1="FR" geom2="down4"/>
+    <pair geom1="FL" geom2="down4"/>
+    <pair geom1="RR" geom2="down5"/>
+    <pair geom1="RL" geom2="down5"/>
+    <pair geom1="FR" geom2="down5"/>
+    <pair geom1="FL" geom2="down5"/>
+    <pair geom1="RR" geom2="down6"/>
+    <pair geom1="RL" geom2="down6"/>
+    <pair geom1="FR" geom2="down6"/>
+    <pair geom1="FL" geom2="down6"/>
+    <pair geom1="RR" geom2="down7"/>
+    <pair geom1="RL" geom2="down7"/>
+    <pair geom1="FR" geom2="down7"/>
+    <pair geom1="FL" geom2="down7"/>
+    <pair geom1="RR" geom2="down8"/>
+    <pair geom1="RL" geom2="down8"/>
+    <pair geom1="FR" geom2="down8"/>
+    <pair geom1="FL" geom2="down8"/>
+    <pair geom1="RR" geom2="down9"/>
+    <pair geom1="RL" geom2="down9"/>
+    <pair geom1="FR" geom2="down9"/>
+    <pair geom1="FL" geom2="down9"/>
+    <pair geom1="RR" geom2="down10"/>
+    <pair geom1="RL" geom2="down10"/>
+    <pair geom1="FR" geom2="down10"/>
+    <pair geom1="FL" geom2="down10"/>
+    <pair geom1="RR" geom2="finish_flat"/>
+    <pair geom1="RL" geom2="finish_flat"/>
+    <pair geom1="FR" geom2="finish_flat"/>
+    <pair geom1="FL" geom2="finish_flat"/>
+  </contact>
+</mujoco>

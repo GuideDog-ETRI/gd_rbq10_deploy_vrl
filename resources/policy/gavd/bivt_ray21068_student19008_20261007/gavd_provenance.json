@@ -1,0 +1,61 @@
+{
+  "artifact_type": "gavd_student_checkpoint",
+  "student_architecture": "grid_attention_v1",
+  "checkpoint_iteration": 19008,
+  "student_checkpoint": "student/perception_19008.pt",
+  "student_sha256": "975bea9794a2aadc504fe29153da7705a19ae63cf2f166ff3f9b64dc7663dafc",
+  "source_run": "gavd21068_512env_20k_20261006_170023",
+  "source_repository_revision": "21a3a60bc8c8c9ac2a30577a29ffc5a927cfab25",
+  "teacher_checkpoint_in_repository": "checkpoints/teachers/bivt/ray_gap_clean_vendor_new_top1_21068_20261005/teacher/21068_top1.pt",
+  "teacher_sha256": "fa397d22a949e24f74312b5270b5954a4ddb15c7451ea85ba8f64dbeeb7c9501",
+  "teacher_package_metadata": "checkpoints/teachers/bivt/ray_gap_clean_vendor_new_top1_21068_20261005/metadata.json",
+  "camera_profile": "vendor_new",
+  "camera_contract_file": "camera_contract.json",
+  "training_args_file": "training_args.json",
+  "student_params": "params/student/",
+  "teacher_params": "params/teacher/",
+  "source_snapshot": "source/",
+  "selection_file": "selection.json",
+  "selection_proxy_score": 0.19830153014747398,
+  "supervision": {
+    "student_alignment_contract": 2,
+    "teacher_geometry_supervision": "teacher_visible_valid_finite_cells_only",
+    "teacher_visibility_supervision": "teacher_ray_mask_all_cells",
+    "teacher_behavior_target": "same_capture_step_teacher_action"
+  },
+  "camera_transport": {
+    "interval_ms": [
+      70.0,
+      100.0
+    ],
+    "delay_ms": [
+      0.0,
+      150.0
+    ],
+    "drop_probability": 0.05,
+    "policy_dt": 0.01,
+    "sampling": "uniform_integer_policy_steps",
+    "scope": "shared_batch_four_camera_set",
+    "target_time": "capture",
+    "out_of_order": "discard_older_than_last_delivered"
+  },
+  "completion": {
+    "capture_iterations": 20000,
+    "delivered_packets": 18977,
+    "dropped_packets": 1023
+  },
+  "evaluation": "Training proxy ranking only; no deployment or held-out walking performance evaluation.",
+  "source_commit": "3041279",
+  "source_checkout": "/home/user/gd_project/gd_lab_vrl_gavd_deploy_3041279",
+  "deployment_runtime": "common VisionStudentThread / DreamVrlBackend",
+  "sequential_cpu_trials": 16,
+  "student_eager_onnx_max_abs_error": 2.1606683731079102e-07,
+  "synthetic_student_to_actor_finite": true,
+  "mujoco_walking_validated": false,
+  "files_sha256": {
+    "policy_vrl_student.pt": "77c09e98e1fbaf5aa5d94c316dce60ed3f1d5055af91550d8456bd43752f8ec0",
+    "policy_vrl.onnx": "6c02064f18b3d77382260bea7274cfa498cd682c46e3a5556a1cf6c96f253064",
+    "policy_vrl_student.onnx": "0cde83b552f105c7f10c9c3f5a98e8399268fd88c8e949e4d7fee9cbc3906663",
+    "policy_vrl.pt": "42ca60185c1244c7c153200b94472b4af24b3e8b60bfff4b125acc9a92e732d2"
+  }
+}

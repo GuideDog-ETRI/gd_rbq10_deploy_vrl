@@ -7,6 +7,6 @@ for pid in $(pgrep -x CAMEL-Pilot || true); do
  test "$(readlink -f /proc/$pid/exe)" = "$repo/gast/runtime/build/pilot/CAMEL-Pilot" || { echo 'Other Pilot owner'; exit 1; }
  grep -zFxq 'RBQ_POLICY_FILE=gast/bivt_ray7986_student20000_env516_bptt16/policy_vrl.onnx' /proc/$pid/environ || { echo 'Other model owner'; exit 1; }
 done
-export RBQ_DIR=/home/user/gd_project/RBQ_vendor/RBQ-nightly
+export RBQ_DIR="${RBQ_DIR:-$([ "${GD_LAB_ALLOW_LEGACY_CAMERA:-}" = 1 ] && echo /home/user/gd_project/RBQ_vendor/RBQ-nightly || echo /home/user/gd_project/RBQ_vendor_new/RBQ-nightly)}"  # legacy SDK only with GD_LAB_ALLOW_LEGACY_CAMERA=1
 bash "$repo/gast/runtime/scripts/run_sim_vrl.sh" stop
 rm -f "$here/logs/owned-launch"

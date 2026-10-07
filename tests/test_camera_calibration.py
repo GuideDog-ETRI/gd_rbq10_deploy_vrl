@@ -211,15 +211,18 @@ class Policy(unittest.TestCase):
             with self.assertRaisesRegex(cc.CameraContractError, "encoder not found"):
                 cc.policy_profile(policy)
 
-    def test_every_shipped_camera_contract_is_legacy_and_complete(self):
+    def test_every_shipped_camera_contract_matches_its_onnx_and_is_complete(self):
         manifests = [p for p in (ROOT / "resources/policy").glob("*/*/*.json")
                      if "camera_contract" in json.loads(p.read_text())]
         self.assertTrue(manifests)
         for manifest in manifests:
             with self.subTest(manifest=str(manifest.relative_to(ROOT))):
                 contract = json.loads(manifest.read_text())["camera_contract"]
-                self.assertEqual(contract["profile"], "vendor_legacy")  # historical records, never relabelled
-                self.assertEqual(cc._contract_problems(contract, "vendor_legacy"), [])
+                # Bundles exported before the switch carry no ONNX stamp and stay vendor_legacy (never relabelled);
+                # a vendor_new bundle must say so in its student ONNX too.
+                expected = cc.policy_profile(manifest.parent / "policy_vrl.onnx")
+                self.assertEqual(contract["profile"], expected)
+                self.assertEqual(cc._contract_problems(contract, expected), [])
 
 
 class Pair(unittest.TestCase):

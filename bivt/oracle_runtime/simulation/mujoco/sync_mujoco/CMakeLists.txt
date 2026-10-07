@@ -12,6 +12,12 @@ set(VRL_MUJOCO_ROOT "/tmp/mujoco-3.3.0" CACHE PATH "MuJoCo 3.3.0 release")
 add_executable(MujocoVrlSync src/main.cpp src/utils/VisionPublisher.cpp
     src/utils/simulate.cc src/gl/platform_ui_adapter.cc src/gl/glfw_adapter.cc
     src/gl/glfw_dispatch.cc)
+# The new RBQ SDK (vendor_new) simulator adds LiDAR publishing; the legacy one has no such files.
+foreach(extra src/utils/MjLidar.cpp src/utils/LidarPublisher.cpp)
+    if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${extra})
+        target_sources(MujocoVrlSync PRIVATE ${extra})
+    endif()
+endforeach()
 target_include_directories(MujocoVrlSync PRIVATE src ${OpenCV_INCLUDE_DIRS}
     ${VRL_SDK_ROOT}/include ${VRL_SDK_ROOT}/include/ddscxx ${VRL_MUJOCO_ROOT}/include)
 target_link_libraries(MujocoVrlSync PRIVATE glfw OpenGL::GL Eigen3::Eigen

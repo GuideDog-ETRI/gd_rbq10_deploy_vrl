@@ -174,8 +174,12 @@ cmd_up() {
            [ "$mounted_terrain" != "$expected_terrain" ]; then
                 state="$(${DOCKER} inspect --format '{{.State.Status}}' "${CONTAINER}")"
                 if [ "$state" != exited ] && [ "$state" != created ]; then
-                    echo "ERROR: ${CONTAINER} uses another SDK or terrain mount; stop its owning simulation first." >&2
-                    return 1
+                    if ${DOCKER} exec "${CONTAINER}" pgrep -f 'Motion|Mujoco' >/dev/null 2>&1; then
+                        echo "ERROR: ${CONTAINER} uses another SDK or terrain mount; stop its owning simulation first." >&2
+                        return 1
+                    fi
+                    # Nothing runs in it (left over from an earlier SDK/terrain): stop it and keep it renamed below.
+                    ${DOCKER} stop "${CONTAINER}" >/dev/null
                 fi
                 backup_name="${CONTAINER}-old-mount-$(date +%Y%m%d%H%M%S)"
                 ${DOCKER} rename "${CONTAINER}" "$backup_name"

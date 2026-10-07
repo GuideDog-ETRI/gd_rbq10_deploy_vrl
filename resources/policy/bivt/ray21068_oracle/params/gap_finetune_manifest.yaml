@@ -1,0 +1,43 @@
+task: Gd-VrlGapFinetuneCleanRaycast-Rbq10-Dreamwaq-v0
+arm: clean
+checkpoint:
+  iter: 17206
+  sha256: a70adbda5b73925f5936eaef27ee3b33686d9f7489486afdda9bf40ddb0c326d
+camera_profile: vendor_new
+resumed_iteration: 17207
+ppo_lr:
+  requested: 0.0001
+  getter: 0.0001
+  groups:
+  - 0.0001
+  min_learning_rate: 3.0e-05
+  schedule: fixed
+cenet_lr:
+  groups:
+  - 0.001
+  expected: 0.001
+  as_expected: true
+baseline_gate:
+  waived: true
+  reason: 'user waived gate C on 2026-10-05: multi-GPU ARM4 Clean gap fine-tuning
+    from 17206 with vendor_new cameras'
+reward_weights:
+  platform_gap_monitor: 1.0
+  platform_gap_intrusion: -3.0
+  platform_gap_clean: 1.5
+train_arm_env: '4'
+hydra_overrides:
+- agent.num_steps_per_env=100
+- agent.algorithm.num_learning_epochs=5
+- agent.algorithm.num_mini_batches=4
+- agent.algorithm.schedule=fixed
+- agent.algorithm.min_learning_rate=0.00003
+- agent.save_interval=100
+- agent.top5_min_spacing=100
+seed: 44
+num_envs: 1365
+distributed: true
+world_size: 3
+total_envs: 4096
+source_commit: 60455f859ae7e4f416862d48db42685b29fb4f4e
+patch_sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855

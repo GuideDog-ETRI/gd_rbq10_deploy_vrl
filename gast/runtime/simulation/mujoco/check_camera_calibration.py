@@ -32,6 +32,11 @@ import xml.etree.ElementTree as ET
 
 TOL = 1e-5
 ALLOW_LEGACY_ENV = "GD_LAB_ALLOW_LEGACY_CAMERA"
+# TEMPORARY diagnostic (2026-10-06, user request): render the simulator cameras with another profile than
+# the SDK/policy, e.g. watch the vendor_new (downward, hind-leg) view with a legacy-trained policy.
+# The payload's BT0-BT3 are rewritten to this profile and a policy/simulator mismatch is let through with a
+# warning. A policy driven by cameras it was not trained with is NOT a performance result.
+TEMP_OVERRIDE_ENV = "GD_LAB_TEMP_CAMERA_OVERRIDE"
 DEFAULT_PROFILE = "vendor_new"
 LEGACY_PROFILES = ("vendor_legacy",)
 SDK_MODEL = Path("resources/model/rbq/rbq.xml")
@@ -227,9 +232,27 @@ def sdk_profile(rbq_dir: Path, environ=None) -> str:
     return profile
 
 
+def temp_override(environ=None) -> str | None:
+    environ = os.environ if environ is None else environ
+    profile = environ.get(TEMP_OVERRIDE_ENV) or None
+    if profile is not None:
+        if profile not in PROFILES:
+            raise CameraContractError(f"{TEMP_OVERRIDE_ENV}={profile!r} is not a known camera profile")
+        print(f"WARNING: TEMPORARY CAMERA OVERRIDE {TEMP_OVERRIDE_ENV}={profile}: simulator cameras are rendered "
+              f"as {profile}; results with a policy trained on other cameras are diagnostic only", file=sys.stderr)
+    return profile
+
+
 def check_model(rbq_dir: Path, model_xml: Path, environ=None) -> str:
     """The model MuJoCo actually loads (vendor rbq.xml or a generated payload) has the SDK's cameras."""
     sdk = sdk_profile(rbq_dir, environ)
+    override = temp_override(environ)
+    if override is not None:
+        actual = model_profile(model_xml)
+        if actual != override:
+            raise CameraContractError(f"{model_xml}: cameras are {actual}, but {TEMP_OVERRIDE_ENV}={override}; "
+                                      "regenerate the payload with the override set")
+        return override
     sdk_geometry = model_geometry(Path(rbq_dir) / SDK_MODEL)
     geometry = model_geometry(model_xml)
     if (not _close(_flat(geometry["positions"]), _flat(sdk_geometry["positions"]))
@@ -315,6 +338,9 @@ def check_pair(policy: Path, rbq_dir: Path, encoder: Path | None = None, model_x
     """Policy and simulator cameras must be the same profile; legacy only as an explicitly allowed pair."""
     simulator = check_model(rbq_dir, model_xml, environ) if model_xml else sdk_profile(rbq_dir, environ)
     trained = policy_profile(policy, encoder)
+    override = temp_override(environ)
+    if override is not None:
+        return trained, override  # mismatch allowed only under the temporary override (warned above)
     if trained != simulator:
         raise CameraContractError(f"policy cameras ({trained}) differ from the simulator's ({simulator}); "
                                   f"{ALLOW_LEGACY_ENV} never allows a mixed pair")
@@ -344,7 +370,7 @@ def main(argv=None) -> int:
         else:
             trained, simulator = check_pair(args.policy, args.rbq_dir, args.encoder, args.model_xml)
             print(f"CAMERA CONTRACT OK: policy={trained} simulator={simulator}", file=sys.stderr)
-            print(simulator)
+            print(trained)  # the profile the Pilot must expect from the model (equal to the simulator's unless overridden)
     except (CameraContractError, OSError) as exc:
         print(f"CAMERA CONTRACT REFUSED: {exc}", file=sys.stderr)
         return 2

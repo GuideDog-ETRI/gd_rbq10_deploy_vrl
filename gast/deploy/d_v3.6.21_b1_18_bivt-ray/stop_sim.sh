@@ -15,6 +15,6 @@ if [[ "$actual" != "$expected" ]]; then
   echo "Refusing stop: owner is '$actual', requested '$expected'." >&2
   exit 1
 fi
-export RBQ_DIR=/home/user/gd_project/RBQ_vendor/RBQ-nightly
+export RBQ_DIR="${RBQ_DIR:-$([ "${GD_LAB_ALLOW_LEGACY_CAMERA:-}" = 1 ] && echo /home/user/gd_project/RBQ_vendor/RBQ-nightly || echo /home/user/gd_project/RBQ_vendor_new/RBQ-nightly)}"  # legacy SDK only with GD_LAB_ALLOW_LEGACY_CAMERA=1
 bash "$repo/gast/runtime/scripts/run_sim_vrl.sh" stop
 rm -f "$marker"

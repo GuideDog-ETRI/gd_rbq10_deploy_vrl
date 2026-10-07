@@ -3,7 +3,7 @@
 set -euo pipefail
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SIM_CONTAINER="${SIM_CONTAINER:-rbq-sim-vrl}"
-RBQ_DIR="${RBQ_DIR:-${REPO_DIR}/../RBQ_vendor/RBQ-nightly}"
+RBQ_DIR="${RBQ_DIR:-$HOME/gd_project/RBQ_vendor_new/RBQ-nightly}"  # same default as rbq_sim.sh
 cd "${REPO_DIR}"
 python3 simulation/mujoco/prepare_sync_vision.py "${RBQ_DIR}" "${REPO_DIR}/build/sync_mujoco_source"
 docker exec -u root "${SIM_CONTAINER}" bash -lc \
@@ -13,6 +13,10 @@ docker exec "${SIM_CONTAINER}" bash -lc \
 docker exec "${SIM_CONTAINER}" mkdir -p /tmp/vrl_sync_source /tmp/vrl_sdk
 docker cp build/sync_mujoco_source/. "${SIM_CONTAINER}:/tmp/vrl_sync_source"
 docker cp extern/rbq_sdk/. "${SIM_CONTAINER}:/tmp/vrl_sdk"
+# The new SDK changed some inline DDS headers and added LidarDds.hpp; use that SDK's own copies.
+if [ -d "${RBQ_DIR}/rbq_sdk/cpp/rbq_sdk_cpp/include/dds" ]; then
+    docker cp "${RBQ_DIR}/rbq_sdk/cpp/rbq_sdk_cpp/include/dds/." "${SIM_CONTAINER}:/tmp/vrl_sdk/include/rbq_sdk/dds"
+fi
 docker exec "${SIM_CONTAINER}" cmake -S /tmp/vrl_sync_source -B /tmp/vrl_sync_build
 docker exec "${SIM_CONTAINER}" cmake --build /tmp/vrl_sync_build -j 4
 # Do not overwrite a running executable. Stop only the scoped simulator first.

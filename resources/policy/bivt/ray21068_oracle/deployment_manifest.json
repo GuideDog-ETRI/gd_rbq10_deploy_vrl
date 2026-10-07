@@ -1,0 +1,137 @@
+{
+  "teacher_sha256": "fa397d22a949e24f74312b5270b5954a4ddb15c7451ea85ba8f64dbeeb7c9501",
+  "iteration": 21068,
+  "actor_onnx_sha256": "6c02064f18b3d77382260bea7274cfa498cd682c46e3a5556a1cf6c96f253064",
+  "encoder_onnx_sha256": "fd651f1289b2960755229f5010c44398ebfa83674314a03589f572785580dd05",
+  "parity_max_abs_error": 9.894371032714844e-06,
+  "checks": {
+    "actor_0": 5.7220458984375e-06,
+    "actor_1": 5.7220458984375e-06,
+    "actor_2": 3.2186508178710938e-06,
+    "actor_3": 5.0067901611328125e-06,
+    "actor_4": 5.7220458984375e-06,
+    "actor_5": 5.0067901611328125e-06,
+    "actor_6": 8.58306884765625e-06,
+    "actor_7": 3.6954879760742188e-06,
+    "actor_8": 1.9669532775878906e-06,
+    "actor_9": 6.318092346191406e-06,
+    "actor_10": 9.894371032714844e-06,
+    "actor_11": 2.384185791015625e-06,
+    "encoder_0": 0.0,
+    "encoder_1": 5.364418029785156e-07,
+    "encoder_2": 7.152557373046875e-07,
+    "encoder_3": 4.76837158203125e-07,
+    "encoder_4": 7.748603820800781e-07,
+    "encoder_5": 7.152557373046875e-07,
+    "encoder_6": 6.556510925292969e-07,
+    "encoder_7": 7.897615432739258e-07,
+    "encoder_8": 5.960464477539062e-07,
+    "encoder_9": 4.544854164123535e-07,
+    "encoder_10": 3.5762786865234375e-07,
+    "encoder_11": 4.76837158203125e-07
+  },
+  "input_note": "full privileged course height grid; differs from training camera visibility; diagnostic only",
+  "camera_profile": "vendor_new",
+  "camera_contract": {
+    "profile": "vendor_new",
+    "positions": [
+      [
+        0.364,
+        0,
+        -0.024919
+      ],
+      [
+        0.26097,
+        0,
+        -0.04582
+      ],
+      [
+        -0.19515,
+        0.0065,
+        -0.0465
+      ],
+      [
+        -0.352082,
+        -1.1e-05,
+        -0.018938
+      ]
+    ],
+    "quaternions_opengl": [
+      [
+        0,
+        -0.1736482,
+        0,
+        0.9848078
+      ],
+      [
+        0,
+        0.1218693,
+        0,
+        0.9925462
+      ],
+      [
+        0,
+        0,
+        0,
+        1
+      ],
+      [
+        0.9848078,
+        0,
+        0.1736482,
+        0
+      ]
+    ],
+    "sensor_size_m": [
+      0.003896,
+      0.00214
+    ],
+    "focal_m": 0.00193,
+    "width": 80,
+    "height": 45,
+    "source_resolution": [
+      640,
+      360
+    ],
+    "depth_clip": [
+      0.15,
+      5.0
+    ],
+    "period_steps": 8,
+    "policy_dt": 0.01,
+    "render_height": 48,
+    "schema_version": 1,
+    "terrain_observation_version": 2,
+    "camera_names": [
+      "front_depth_camera0",
+      "front_depth_camera1",
+      "hind_depth_camera2",
+      "hind_depth_camera3"
+    ],
+    "channels": [
+      "depth",
+      "ir_proxy"
+    ],
+    "transform": "camera_to_trunk",
+    "camera_convention": "opengl: looks along -z, +y up",
+    "source": "RBQ SDK rbq.xml BT0-3 (v1.19.47, v1.20.0, main, nightly 41f6fac6 2026-09-09, nightly 5974087c 2026-10-04); main commit 68bc33b77719d357b4323fb88549efd905caf721, rbq.xml git blob 68ad7e0ac2d5bf181d3c6b3663310ff582894f8c",
+    "depth_semantics": "optical_axis_metres",
+    "quaternion_order": "wxyz",
+    "fov_degrees": [
+      90.531880673026,
+      58.00833537295417
+    ],
+    "fx": 39.630390143737166,
+    "fy": 40.58411214953271,
+    "cx": 40.0,
+    "cy": 22.5,
+    "frame_shape": [
+      1,
+      4,
+      2,
+      45,
+      80
+    ]
+  },
+  "camera_contract_note": "copied from the 21068 teacher's vendor_new contract; the oracle feeds the privileged height grid and does not read the cameras"
+}

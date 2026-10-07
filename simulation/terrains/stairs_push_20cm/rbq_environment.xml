@@ -1,0 +1,1 @@
+<?xml version="1.0" encoding="utf-8"?><mujoco model="rbq stairs push 20cm course"><include file="env/vrl_progression/rbq_payload.xml"/><include file="env/vrl_progression/environment.xml"/></mujoco>

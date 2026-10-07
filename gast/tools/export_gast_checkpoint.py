@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -17,7 +18,8 @@ import yaml
 from tensordict import TensorDict
 
 ROOT = Path(__file__).resolve().parents[2]
-TRAIN = ROOT.parent / "gd_lab_vrl"
+# Training repo whose GAST code produced the checkpoint (override for a worktree).
+TRAIN = Path(os.environ.get("GD_LAB_TRAIN_ROOT", ROOT.parent / "gd_lab_vrl")).resolve()
 sys.path.insert(0, str(TRAIN / "gast/src"))
 sys.path.insert(0, str(ROOT / "gast/src"))
 
@@ -165,6 +167,21 @@ def export_one(checkpoint_path, output_name, expected_iteration, expected_teache
                     raise AssertionError("Non-finite actor ONNX output")
                 np.testing.assert_allclose(expected.numpy(), actual, atol=1e-5, rtol=1e-4)
                 actor_errors.append(float(np.max(np.abs(expected.numpy() - actual))))
+
+    # The runtime refuses a student without camel.camera_profile on vendor_new cameras; legacy
+    # checkpoints (no contract) stay unstamped so they replay only with the legacy opt-in.
+    profile = (ckpt.get("camera_contract") or {}).get("profile")
+    if profile is not None:
+        if (ckpt.get("student_config") or {}).get("camera_profile", profile) != profile:
+            raise ValueError("student_config camera_profile differs from the recorded camera contract")
+        import onnx
+        model = onnx.load(str(student_onnx))
+        entry = next((m for m in model.metadata_props if m.key == "camel.camera_profile"), None)
+        if entry is None:
+            entry = model.metadata_props.add()
+            entry.key = "camel.camera_profile"
+        entry.value = profile
+        onnx.save(model, str(student_onnx))
 
     student_sibling = output / "policy_vrl_student.onnx"
     shutil.copy2(student_onnx, student_sibling)

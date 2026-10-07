@@ -1,0 +1,170 @@
+{
+  "teacher_iteration": 21068,
+  "student_iteration": 19008,
+  "student_arch": "grid_attention_v1",
+  "age_input": {
+    "hidden_slot": 63,
+    "units": "seconds_clipped_0_1"
+  },
+  "student_teacher_checkpoint": "/home/onvlm/gd_project/gd_lab_vrl_7901/logs/gavd21068_512env_20k_20261006_170023.launch/teacher.pt",
+  "camera_contract": {
+    "profile": "vendor_new",
+    "positions": [
+      [
+        0.364,
+        0,
+        -0.024919
+      ],
+      [
+        0.26097,
+        0,
+        -0.04582
+      ],
+      [
+        -0.19515,
+        0.0065,
+        -0.0465
+      ],
+      [
+        -0.352082,
+        -1.1e-05,
+        -0.018938
+      ]
+    ],
+    "quaternions_opengl": [
+      [
+        0,
+        -0.1736482,
+        0,
+        0.9848078
+      ],
+      [
+        0,
+        0.1218693,
+        0,
+        0.9925462
+      ],
+      [
+        0,
+        0,
+        0,
+        1
+      ],
+      [
+        0.9848078,
+        0,
+        0.1736482,
+        0
+      ]
+    ],
+    "sensor_size_m": [
+      0.003896,
+      0.00214
+    ],
+    "focal_m": 0.00193,
+    "width": 80,
+    "height": 45,
+    "source_resolution": [
+      640,
+      360
+    ],
+    "depth_clip": [
+      0.15,
+      5.0
+    ],
+    "period_steps": 8,
+    "policy_dt": 0.01,
+    "render_height": 48,
+    "schema_version": 1,
+    "terrain_observation_version": 2,
+    "camera_names": [
+      "front_depth_camera0",
+      "front_depth_camera1",
+      "hind_depth_camera2",
+      "hind_depth_camera3"
+    ],
+    "channels": [
+      "depth",
+      "ir_proxy"
+    ],
+    "transform": "camera_to_trunk",
+    "camera_convention": "opengl: looks along -z, +y up",
+    "source": "RBQ SDK rbq.xml BT0-3 (v1.19.47, v1.20.0, main, nightly 41f6fac6 2026-09-09, nightly 5974087c 2026-10-04); main commit 68bc33b77719d357b4323fb88549efd905caf721, rbq.xml git blob 68ad7e0ac2d5bf181d3c6b3663310ff582894f8c",
+    "depth_semantics": "optical_axis_metres",
+    "quaternion_order": "wxyz",
+    "fov_degrees": [
+      90.531880673026,
+      58.00833537295417
+    ],
+    "fx": 39.630390143737166,
+    "fy": 40.58411214953271,
+    "cx": 40.0,
+    "cy": 22.5,
+    "frame_shape": [
+      1,
+      4,
+      2,
+      45,
+      80
+    ]
+  },
+  "agent_config_source": "/home/user/gd_project/gd_lab_vrl_gavd_deploy_3041279/checkpoints/students/gavd/bivt_ray21068_student19008_20261007/params/teacher/agent.yaml",
+  "architecture_strict_load": true,
+  "safe_weights_only": true,
+  "checks": {
+    "policy_vrl.onnx": {
+      "inputs": [
+        [
+          "direct_obs",
+          [
+            "batch",
+            46
+          ]
+        ],
+        [
+          "cenet_obs",
+          [
+            "batch",
+            230
+          ]
+        ],
+        [
+          "terrain_latent",
+          [
+            "batch",
+            32
+          ]
+        ]
+      ],
+      "torch_onnx_max_abs_error": 5.7220458984375e-06
+    },
+    "policy_vrl_student.onnx": {
+      "inputs": [
+        [
+          "frames",
+          [
+            1,
+            4,
+            2,
+            45,
+            80
+          ]
+        ],
+        [
+          "hidden_in",
+          [
+            1,
+            64
+          ]
+        ]
+      ],
+      "torch_onnx_max_abs_error": 1.4901161193847656e-07
+    }
+  },
+  "sha256": {
+    "/home/user/gd_project/gd_lab_vrl_gavd_deploy_3041279/checkpoints/teachers/bivt/ray_gap_clean_vendor_new_top1_21068_20261005/teacher/21068_top1.pt": "fa397d22a949e24f74312b5270b5954a4ddb15c7451ea85ba8f64dbeeb7c9501",
+    "/home/user/gd_project/gd_lab_vrl_gavd_deploy_3041279/checkpoints/students/gavd/bivt_ray21068_student19008_20261007/student/perception_19008.pt": "975bea9794a2aadc504fe29153da7705a19ae63cf2f166ff3f9b64dc7663dafc",
+    "/home/user/gd_project/gd_rbq10_deploy_vrl/resources/policy/gavd/bivt_ray21068_student19008_20261007/policy_vrl.onnx": "6c02064f18b3d77382260bea7274cfa498cd682c46e3a5556a1cf6c96f253064",
+    "/home/user/gd_project/gd_rbq10_deploy_vrl/resources/policy/gavd/bivt_ray21068_student19008_20261007/policy_vrl_student.onnx": "0cde83b552f105c7f10c9c3f5a98e8399268fd88c8e949e4d7fee9cbc3906663"
+  }
+}
