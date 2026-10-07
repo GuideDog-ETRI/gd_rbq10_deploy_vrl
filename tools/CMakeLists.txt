@@ -74,6 +74,14 @@ target_include_directories(vision-student-probe PRIVATE ${CMAKE_SOURCE_DIR}/pilo
 target_link_libraries(vision-student-probe PRIVATE wire rbq_sdk::rbq_sdk
     onnxruntime::onnxruntime ${OpenCV_LIBS})
 
+# student-decoder-viewer — GAST 학생 입력 옆에 은닉 상태를 디코딩한 지형(11x17, 6채널)을 표시한다.
+# 읽기 전용 복제본(VisionStudentThread)을 돌리며, 토픽 이름은 configs/vision_topics.conf에서 읽는다.
+add_executable(student-decoder-viewer src/student_decoder_viewer.cpp
+    ${CMAKE_SOURCE_DIR}/perception/common/VisionStudentThread.cpp)
+target_include_directories(student-decoder-viewer PRIVATE ${CMAKE_SOURCE_DIR}/pilot/src
+    ${CMAKE_SOURCE_DIR}/perception/common ${OpenCV_INCLUDE_DIRS})
+target_link_libraries(student-decoder-viewer PRIVATE wire rbq_sdk::rbq_sdk onnxruntime::onnxruntime ${OpenCV_LIBS})
+
 # vision-viewer — student 입력과 같은 4-camera Depth+IR 텐서를 표시한다.
 add_executable(vision-viewer src/student_input_viewer.cpp)
 add_executable(vision-record src/vision_record.cpp)

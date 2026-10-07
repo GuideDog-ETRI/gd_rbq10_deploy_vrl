@@ -38,6 +38,21 @@ GD_LAB_TRAIN_ROOT=<gd_lab_vrl>/gast bash evaluation/milestone_eval.sh 5000
 #   서버 GAST 학습이 5,000 업데이트에 도달하면 Top-1을 받아 oracle 묶음으로 내보내고 평가
 ```
 
+## 학생 진단: 입력과 은닉 상태 디코딩
+
+`student-decoder-viewer`는 GAST 학생의 카메라 입력(정책에 들어가는 텐서 그대로) 옆에, 학생 은닉 상태를 디코딩한
+지형을 보여 줍니다. 디코딩한 지형은 11×17 격자에 높이, 교사 가시성, 갭, 오르막·내리막 모서리, 디딜 면의 6채널입니다.
+Pilot과 같은 토픽·전처리·ONNX로 읽기 전용 복제본을 돌리므로 Pilot과 actor에는 손대지 않습니다.
+
+```bash
+python3 export/gast_student_decoder.py --bundle gast/<묶음>       # 묶음에 student_decoder.onnx 추가 (한 번)
+build/tools/student-decoder-viewer resources/policy/gast/<묶음> --interface lo --sim
+#   기록만: --headless --save <폴더> [--seconds N]   키: ESC 종료, s 저장, space 멈춤
+```
+
+토픽 이름은 `configs/vision_topics.conf`에 있고 Pilot(`VisionStudentThread`)도 같은 파일을 읽습니다
+(`RBQ_VISION_TOPICS`로 다른 파일 지정, 뷰어는 `--topics`). 지금은 GAST 학생만 지원합니다(RVLD·GAVD는 은닉 상태만으로 지형을 풀 수 없음).
+
 ## 구조
 
 ```

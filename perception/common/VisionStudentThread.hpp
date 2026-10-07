@@ -97,6 +97,19 @@ public:
     // Uses a mutex, so this is not a lock-free API.
     bool latestLatent(float out[kLatentDim], int64_t* ageMs = nullptr) const;
 
+    // Read-only diagnostics (student-decoder-viewer): the exact input tensor, hidden_out and latent of the
+    // last student step. Off by default, so production pays one relaxed atomic load per step.
+    struct DebugSnapshot {
+        std::vector<float> frames;  // [4,2,45,80], same order as the ONNX input
+        std::vector<float> hidden;  // hidden_out after the step
+        std::array<float, kLatentDim> latent{};
+        int64_t inputStampMs = 0;   // source time of the frames (monotonic ms)
+        uint64_t sequence = 0;      // increments per student step
+    };
+    void enableDebugSnapshot(bool on) { m_debugEnabled.store(on, std::memory_order_relaxed); }
+    bool latestDebug(DebugSnapshot& out) const;
+    bool gastStudent() const { return m_gastStudent; }
+
 private:
     struct CameraSlot {
         mutable std::mutex mtx;
@@ -157,6 +170,9 @@ private:
 
     // student 루프 스레드 전용 -- 락 불필요.
     std::vector<float> m_hidden;  // sized from the model: kHiddenDim or kGastHiddenDim
+    std::atomic<bool> m_debugEnabled{false};
+    mutable std::mutex m_debugMtx;
+    DebugSnapshot m_debug;
     bool m_bavrlVision = false;
     std::array<uint64_t, kNumCameras> m_consumedDepth{}, m_consumedIr{};
 };

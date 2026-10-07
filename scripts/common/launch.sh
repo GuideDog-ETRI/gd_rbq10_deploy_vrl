@@ -22,6 +22,7 @@ export RBQ_POLICY_FILE="$BUNDLE/policy_vrl.onnx"
 export RBQ_SIM_SYNC_APP="$SYNC_APP"
 export RBQ_SIM_VISION=1 RBQ_SIM_SYNC_VISION=1 RBQ_PAYLOAD_KG=6 RBQ_WALK=ours RBQ_HEALTH=1
 export RBQ_VRL_HISTORY_INIT=repeat_first
+export RBQ_VISION_TOPICS="${RBQ_VISION_TOPICS:-$repo/configs/vision_topics.conf}"  # camera topic names
 export RBQ_VRL_PILOT_LOG="$repo/logs/pilot.log"
 unset RBQ_VISION_TEST_CONTROL RBQ_VISION_TEST_PLANE RBQ_VISION_TEST_REPLAY GD_LAB_TEMP_CAMERA_OVERRIDE
 if [[ -n "${ENCODER:-}" ]]; then
