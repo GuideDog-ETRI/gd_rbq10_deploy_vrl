@@ -17,6 +17,7 @@
 #include <rbq_sdk/idl/ros2/CompressedImage_.hpp>
 
 #include "CaptureFrameQueue.hpp"
+#include "VisionTopics.hpp"
 
 using ImageMsg = sensor_msgs::msg::dds_::CompressedImage_;
 
@@ -134,8 +135,7 @@ int main() {
     InputFrames input;
     std::vector<std::unique_ptr<rbq_sdk::Subscriber<ImageMsg>>> subscribers;
     for (int c = 0; c < kChannels; ++c) {
-        const std::string topic = "rt/rbq/vision/sensor_" + std::to_string(c / 2) +
-                                  (c % 2 == 0 ? "/depth/compressed" : "/ir/compressed");
+        const std::string topic = c % 2 == 0 ? VisionTopics::load().depthTopic(c/2) : VisionTopics::load().irTopic(c/2);
         subscribers.push_back(std::make_unique<rbq_sdk::Subscriber<ImageMsg>>(
             [&input, c](const ImageMsg& message) { input.push(c, message); }, topic));
         std::cout << "subscribing " << topic << '\n';

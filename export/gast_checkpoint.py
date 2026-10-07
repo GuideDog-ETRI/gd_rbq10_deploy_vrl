@@ -53,10 +53,12 @@ TupleLoader.add_constructor(
 
 def export_one(checkpoint_path, output_name, expected_iteration, expected_teacher_sha):
     checkpoint_path = Path(checkpoint_path).resolve()
+    if Path(output_name).name != output_name or output_name in ("", ".", ".."):
+        raise ValueError("output_name must be a single directory name")
     output = ROOT / "resources/policy/gast" / output_name
     if not checkpoint_path.is_file():
         raise FileNotFoundError(checkpoint_path)
-    output.mkdir(parents=True, exist_ok=True)
+    output.mkdir(parents=True, exist_ok=False)
 
     ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     teacher_path = Path(ckpt["teacher_checkpoint"]).resolve()
@@ -201,7 +203,12 @@ def export_one(checkpoint_path, output_name, expected_iteration, expected_teache
     files = [output / "policy_vrl.onnx", student_sibling, student_onnx,
              output / "policy_vrl.pt", output / "student_checkpoint.pt",
              output / "teacher_checkpoint.pt"]
+    from gast_student_decoder import export_decoder
+    decoder_meta = export_decoder(checkpoint_path, output)
+    files.extend([output / "student_decoder.onnx", output / "student_decoder.json"])
     manifest = {
+        "student_decoder_contract": "gast.student_decoder.v1",
+        "student_decoder_parity_max_abs_error": decoder_meta["parity_max_abs_error"],
         "status": "offline_parity_passed_simulation_ready_NOT_smoke_tested",
         "model_bundle": output_name,
         "student_iteration": ckpt["iteration"],

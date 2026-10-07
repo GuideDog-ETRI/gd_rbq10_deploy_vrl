@@ -1,3 +1,4 @@
+#include "VisionTopics.hpp"
 // Read-only synchronized topic recorder, sharing the diagnostic receiver.
 #define main diagnostic_viewer_main
 #include "student_input_viewer.cpp"
@@ -16,7 +17,7 @@ int main(int argc,char** argv) {
     std::vector<std::unique_ptr<rbq_sdk::Subscriber<ImageMsg>>> subs;
     for(int c=0;c<8;++c) subs.push_back(std::make_unique<rbq_sdk::Subscriber<ImageMsg>>(
         [&input,c](const ImageMsg& m){input.push(c,m);},
-        "rt/rbq/vision/sensor_"+std::to_string(c/2)+(c%2?"/ir/compressed":"/depth/compressed")));
+        (c%2?VisionTopics::load().irTopic(c/2):VisionTopics::load().depthTopic(c/2))));
     const auto start=steadyMs();
     int n=0;
     while(steadyMs()-start < seconds*1000) {
