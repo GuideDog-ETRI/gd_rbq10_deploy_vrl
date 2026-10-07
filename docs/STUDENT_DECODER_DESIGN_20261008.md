@@ -28,14 +28,17 @@ hidden 6116 중 앞 5984를 사용. 출력 [1,187,6], 채널 0 회귀(m), 1..5 s
    RVLD: hazard scalar만 가능, 가짜 6채널 지도 생성 금지. 이번 구현은 둘 다 명확히 unsupported.
 4. 기록: PNG 외 machine-readable OpenCV FileStorage JSON frame v1.
    seq, input_stamp_ms(monotonic), observer_ms, replica=true, frames[4,2,45,80],
-   hidden[6116], latent[32], decoded[187,6]. 원본 pose 없는 파일은 pose=null/unavailable.
+   hidden[6116], latent[32], decoded[187,6]. 원본 pose 없는 파일은 capture_pose_status="unavailable".
    파일명 sequence 기반, 전용 새 출력 폴더를 요구하고 덮어쓰기 거부.
+   수정 회차2: bounded queue(2), writer thread, 1024 frame/512 MiB JSON 기본 상한. drop 및 cap 집계.
    offline Python CPU reader는 pickle 없이 읽고 shape/finite 검증, 시간 점프·누락 검출.
    RL replay JSON과 동일 형식이라고 위장하지 않는다. 향후 schema adapter로 연결.
 5. export: export_decoder 함수 분리, seed42/CPU 단일 thread parity, metadata에 source SHA256/ONNX SHA256/
    camera contract/grid/channel/contract version. 새 gast_checkpoint export에 자동 포함하고 manifest hash에 등록.
    check_gast_bundle은 새 decoder contract를 검증하며 legacy decoder 없음은 명시적으로 구분.
    기존 묶음은 이번에 변경하지 않는다. backfill은 새 --output-dir 복사본만 허용.
+   수정 회차2: 정책 parity 통과 후 decoder만 실패하면 경고와 unavailable/error metadata로 bundle 생성은 계속한다.
+   decoder contract와 불완전 decoder 파일은 남기지 않는다. 본체 parity 실패는 여전히 중단한다.
 6. topics: 기존 VisionTopics 포맷과 우선순위 유지. tools만 파서 재사용. 공용 parser/Pilot/launch 동작은 바꾸지 않는다.
    AppImage 경로 정책은 기존 RBQ_VISION_TOPICS 명시 경로를 유지하며 실기 가드 해제 없음.
 7. 실기: pose 출처/clock domain/sensor calibration/epoch가 확인된 뒤 별도 승인. 이번에는 설계만.

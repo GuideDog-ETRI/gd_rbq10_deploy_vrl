@@ -33,7 +33,13 @@ int main(int argc, char** argv) {
         std::cerr << "stream must be 'rgb', 'ir', or 'depth'\n";
         return 2;
     }
-    const std::string topic = (stream=="depth"?VisionTopics::load().depthTopic(std::stoi(sensorId)):stream=="ir"?VisionTopics::load().irTopic(std::stoi(sensorId)):"rt/rbq/vision/sensor_" + sensorId + "/rgb/compressed");
+    // Validate before constructing any DDS subscriber, including RGB.
+    if(sensorId.size()!=1 || sensorId[0]<'0' || sensorId[0]>'5') {
+        std::cerr<<"sensorId must be one digit 0-5\n";return 2;
+    }
+    const int id=sensorId[0]-'0';
+    const auto topics=VisionTopics::load();
+    const std::string topic = (stream=="depth"?topics.depthTopic(id):stream=="ir"?topics.irTopic(id):"rt/rbq/vision/sensor_" + sensorId + "/rgb/compressed");
     const std::string defaultExt = (stream == "depth") ? ".png" : ".jpg";
     const std::string outPath = (argc > 3) ? argv[3] : ("snapshot_sensor" + sensorId + "_" + stream + defaultExt);
 
