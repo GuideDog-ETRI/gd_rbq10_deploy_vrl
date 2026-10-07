@@ -55,8 +55,8 @@ def main():
     if args.command:
         verify_sim()
     if args.vx:
-        if args.command != "walk" or not .15 <= args.vx <= .80 or args.seconds > (600 if args.state_file else 30):
-            parser.error("forward trial requires WALK, vx [0.15,0.80], seconds <=30")
+        if args.command != "walk" or not .15 <= args.vx <= 1.20 or args.seconds > (600 if args.state_file else 30):
+            parser.error("forward trial requires WALK, vx [0.15,1.20], seconds <=30")
         pid = verify_sim()
         env = Path(f"/proc/{pid}/environ").read_bytes().split(b"\0")
         injected = any(v.startswith(b"RBQ_VISION_TEST_") for v in env)

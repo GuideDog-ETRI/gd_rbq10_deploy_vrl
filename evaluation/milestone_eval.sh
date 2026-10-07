@@ -16,11 +16,15 @@ while true; do
   [ -n "$it" ] && [ "$it" -ge "$T" ] && break
   sleep 600
 done
-top=$($SV "ls $RD/best_top5/ | grep _top1.pt")
+# The checkpoint saved at the milestone itself (model_<T>.pt), not the online Top-1: the Top-5 board
+# compares against entries recorded while the disturbance/noise ramps were still low, so it can stay
+# on an early iteration (it held 883 at 1,900 updates on 10/07).
+top="model_$T.pt"
+until $SV "test -f $RD/$top"; do sleep 60; done
 CK="$REPO/records/checkpoints/gast_v21_at$T"; mkdir -p "$CK/params"
-scp -q -P 20022 bsseo@10.77.32.231:$RD/best_top5/$top "$CK/" && scp -q -P 20022 bsseo@10.77.32.231:$RD/best_top5/leaderboard.json "$CK/"
+scp -q -P 20022 bsseo@10.77.32.231:$RD/$top "$CK/" && scp -q -P 20022 bsseo@10.77.32.231:$RD/best_top5/leaderboard.json "$CK/"
 for f in agent.yaml env.yaml; do scp -q -P 20022 bsseo@10.77.32.231:$RD/params/$f "$CK/params/"; done
-sha=$(sha256sum "$CK/$top" | cut -d' ' -f1); n=${top%%_*}
+sha=$(sha256sum "$CK/$top" | cut -d' ' -f1); n=$T
 echo "reached=$it top1=$top sha256=$sha"
 python3 -c "import json;d=json.load(open('$CK/leaderboard.json'));print('leaderboard',[(e['iteration'],round(e['score'],4)) for e in d['entries']])"
 GD_LAB_TRAIN_ROOT="${GD_LAB_TRAIN_ROOT:?set GD_LAB_TRAIN_ROOT to gd_lab_vrl/gast with the GAST teacher code}" \
