@@ -4,6 +4,7 @@
 #include "../oracle/GastTerrainMemory.hpp"
 #include "StudentAgeContract.hpp"
 #include "../oracle/TerrainScan.hpp"
+#include "VisionTopics.hpp"
 
 #include <sstream>
 #include <algorithm>
@@ -176,7 +177,7 @@ VisionStudentThread::VisionStudentThread(const std::string& studentOnnxPath, int
                     std::lock_guard<std::mutex> lock(m_poseMtx);
                     m_poses.push_back({nowMs(), p, {q.w(), q.x(), q.y(), q.z()}});
                     while (m_poses.size() > 200) m_poses.pop_front();
-                }, "rt/rbq/_sim");
+                }, VisionTopics::load().simState);
         } else if (!(inputs == 2 || inputs == 5) || outputs != 2) {
             FILE_LOG_AS(logERROR, "RLWALK")
                 << "vision student ONNX must be 2-input/2-output (frames, hidden_in -> "
@@ -218,9 +219,11 @@ VisionStudentThread::VisionStudentThread(const std::string& studentOnnxPath, int
     // 이전 코드가 "rgb"를 구독한 탓에 IR 채널이 항상 빈 값(전부 0.0)으로만
     // 들어갔었다 -- depth는 실제로 들어왔으니 완전히 죽은 건 아니었지만, student가
     // IR 정보 없이 학습 때와 다른 입력 분포로 계속 추론해온 것.
+    const VisionTopics topics = VisionTopics::load();
+    FILE_LOG_AS(logINFO, "RLWALK") << "vision topics from " << topics.source();
     for (int i = 0; i < kNumCameras; ++i) {
-        const std::string depthTopic = "rt/rbq/vision/sensor_" + std::to_string(i) + "/depth/compressed";
-        const std::string irTopic    = "rt/rbq/vision/sensor_" + std::to_string(i) + "/ir/compressed";
+        const std::string depthTopic = topics.depthTopic(i);
+        const std::string irTopic    = topics.irTopic(i);
 
         m_subs.push_back(std::make_unique<rbq_sdk::Subscriber<ImageMsg>>(
             [this, i](const ImageMsg& m) {
@@ -262,6 +265,13 @@ VisionStudentThread::VisionStudentThread(const std::string& studentOnnxPath, int
 VisionStudentThread::~VisionStudentThread() {
     m_shutdown.store(true, std::memory_order_release);
     if (m_thread.joinable()) m_thread.join();
+}
+
+bool VisionStudentThread::latestDebug(DebugSnapshot& out) const {
+    std::lock_guard<std::mutex> lock(m_debugMtx);
+    if (m_debug.sequence == 0) return false;
+    out = m_debug;
+    return true;
 }
 
 bool VisionStudentThread::latestLatent(float out[kLatentDim], int64_t* ageMs) const {
@@ -682,6 +692,14 @@ void VisionStudentThread::studentLoop(int updatePeriodMs) {
                 continue;
             }
             std::memcpy(m_hidden.data(), hidden, sizeof(float) * m_hidden.size());
+            if (m_debugEnabled.load(std::memory_order_relaxed)) {
+                std::lock_guard<std::mutex> debugLock(m_debugMtx);
+                m_debug.frames.assign(frames.begin(), frames.end());
+                m_debug.hidden.assign(hidden, hidden + m_hidden.size());
+                std::memcpy(m_debug.latent.data(), latent, sizeof(float) * kLatentDim);
+                m_debug.inputStampMs = m_inputStampMs;
+                ++m_debug.sequence;
+            }
 
             std::lock_guard<std::mutex> lock(m_latentMtx);
             if (m_resetRequested.load(std::memory_order_acquire)) continue;
