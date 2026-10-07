@@ -142,8 +142,19 @@ def export_one(checkpoint_path, output_name, expected_iteration, expected_teache
         observations, {"policy": ["policy"], "critic": ["critic"]}, 12, **agent_cfg
     ).eval()
     teacher_state = torch.load(teacher_path, map_location="cpu", weights_only=True)["model_state_dict"]
-    policy.load_state_dict(teacher_state, strict=True)
+    if any(key.startswith("terrain_decoder.") for key in teacher_state):
+        # GAST teacher (temporal terrain encoder + decoder): the deployed Actor/CENet/normalizers are its
+        # BIVT-Ray-shaped backbone; the camera student replaces the terrain encoder, so that is not exported.
+        terrain = ("terrain_encoder.", "terrain_decoder.")
+        teacher_state = {key: value for key, value in teacher_state.items() if not key.startswith(terrain)}
+        missing, unexpected = torch.nn.Module.load_state_dict(policy, teacher_state, strict=False)
+        if unexpected or any(not key.startswith("terrain_encoder.") for key in missing):
+            raise AssertionError(f"GAST teacher backbone mismatch: missing={missing} unexpected={unexpected}")
+    else:
+        policy.load_state_dict(teacher_state, strict=True)
     for key, value in policy.state_dict().items():
+        if key.startswith("terrain_encoder.") and key not in teacher_state:
+            continue
         if not torch.equal(value, teacher_state[key]):
             raise AssertionError(f"Teacher Actor/CENet mismatch: {key}")
     actor_jit, actor_onnx = export_policy_vrl(
