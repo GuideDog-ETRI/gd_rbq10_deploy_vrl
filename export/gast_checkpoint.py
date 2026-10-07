@@ -203,12 +203,11 @@ def export_one(checkpoint_path, output_name, expected_iteration, expected_teache
     files = [output / "policy_vrl.onnx", student_sibling, student_onnx,
              output / "policy_vrl.pt", output / "student_checkpoint.pt",
              output / "teacher_checkpoint.pt"]
-    from gast_student_decoder import export_decoder
-    decoder_meta = export_decoder(checkpoint_path, output)
-    files.extend([output / "student_decoder.onnx", output / "student_decoder.json"])
+    from optional_student_decoder import add_optional_decoder
+    decoder_fields, decoder_files = add_optional_decoder(checkpoint_path, output)
+    files.extend(decoder_files)
     manifest = {
-        "student_decoder_contract": "gast.student_decoder.v1",
-        "student_decoder_parity_max_abs_error": decoder_meta["parity_max_abs_error"],
+        **decoder_fields,
         "status": "offline_parity_passed_simulation_ready_NOT_smoke_tested",
         "model_bundle": output_name,
         "student_iteration": ckpt["iteration"],

@@ -82,6 +82,12 @@ target_include_directories(student-decoder-viewer PRIVATE ${CMAKE_SOURCE_DIR}/pi
     ${CMAKE_SOURCE_DIR}/perception/common ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(student-decoder-viewer PRIVATE wire rbq_sdk::rbq_sdk onnxruntime::onnxruntime ${OpenCV_LIBS})
 
+# CPU-only production grid/FileStorage regression driver (no DDS).
+add_executable(decoder-diagnostics-test ${CMAKE_SOURCE_DIR}/tests/decoder_diagnostics_test.cpp)
+target_include_directories(decoder-diagnostics-test PRIVATE ${OpenCV_INCLUDE_DIRS})
+target_compile_options(decoder-diagnostics-test PRIVATE -UNDEBUG)
+target_link_libraries(decoder-diagnostics-test PRIVATE ${OpenCV_LIBS})
+
 # vision-viewer — student 입력과 같은 4-camera Depth+IR 텐서를 표시한다.
 add_executable(vision-viewer src/student_input_viewer.cpp)
 add_executable(vision-record src/vision_record.cpp)
@@ -98,4 +104,3 @@ add_executable(camera-profile-test ${CMAKE_SOURCE_DIR}/tests/camera_profile_test
 target_compile_options(camera-profile-test PRIVATE -UNDEBUG)
 
 include_directories(${CMAKE_SOURCE_DIR}/pilot/src)
-

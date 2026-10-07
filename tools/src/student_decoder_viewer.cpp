@@ -31,6 +31,9 @@
 
 #include "VisionStudentThread.hpp"
 #include "VisionTopics.hpp"
+#include "StudentDecoderDiagnostics.hpp"
+#include <rbq_sdk/nlohmann/json.hpp>
+#include <fstream>
 
 namespace fs = std::filesystem;
 
@@ -74,7 +77,8 @@ cv::Mat gridPanel(const float* decoded, int channel, float lo, float hi, int col
         for (int c = 0; c < kCols; ++c) {   // c: x index, -0.8 .. +0.8
             const float v = decoded[(r * kCols + c) * kChannels + channel];
             const float t = std::clamp((v - lo) / (hi - lo), 0.f, 1.f);
-            u8.at<uint8_t>(kCols - 1 - c, kRows - 1 - r) = static_cast<uint8_t>(std::lround(t * 255));
+            const auto cell=decoder_diagnostics::displayCell(r,c);
+            u8.at<uint8_t>(cell.first,cell.second) = static_cast<uint8_t>(std::lround(t * 255));
         }
     cv::Mat big, colour;
     cv::resize(u8, big, {kGridW, kGridH}, 0, 0, cv::INTER_NEAREST);
@@ -82,7 +86,8 @@ cv::Mat gridPanel(const float* decoded, int channel, float lo, float hi, int col
     if (dimVisibility && channel != 1)
         for (int row=0; row<kRows; ++row) for (int col=0; col<kCols; ++col)
             if (decoded[(row*kCols+col)*kChannels+1] < .5f) {
-                auto cell=colour(cv::Rect((kRows-1-row)*kCell,(kCols-1-col)*kCell,kCell,kCell));
+                const auto xy=decoder_diagnostics::displayCell(row,col);
+                auto cell=colour(cv::Rect(xy.second*kCell,xy.first*kCell,kCell,kCell));
                 cell.convertTo(cell,-1,.25);
             }
     // Robot footprint (about 0.70 x 0.30 m) and heading; cell centres are 0.1 m apart.
@@ -108,7 +113,7 @@ void colourbar(cv::Mat& img, cv::Point at, int width, int colormap, const std::s
 
 int runViewer(int argc, char** argv) {
     if (argc < 2) {
-        std::cerr << "usage: student-decoder-viewer <bundle dir> --interface lo --sim [--topics <conf>] [--save <dir>] [--headless [--seconds N]]\n";
+        std::cerr << "usage: student-decoder-viewer <bundle> --interface lo --sim [--topics conf] [--save NEW] [--record NEW] [--record-max-frames N] [--record-max-mb MB] [--height-min x --height-max y] [--dim-visibility] [--headless --seconds N]\n";
         return 2;
     }
     const fs::path bundle = argv[1];
@@ -117,25 +122,32 @@ int runViewer(int argc, char** argv) {
     bool headless = false;
     bool dimVisibility = false;
     double seconds = 0;
+    int maxRecordFrames=1024, maxRecordMB=512;
     for (int i = 2; i < argc; ++i) {
         const std::string flag = argv[i];
         const bool hasValue = i + 1 < argc;
         if (flag == "--sim") continue;
         if (flag == "--headless") { headless = true; continue; }
         if (flag == "--dim-visibility") { dimVisibility = true; continue; }
+        if(flag!="--topics"&&flag!="--save"&&flag!="--record"&&flag!="--height-min"&&flag!="--height-max"&&
+           flag!="--interface"&&flag!="--seconds"&&flag!="--record-max-frames"&&flag!="--record-max-mb")
+            {std::cerr<<"unknown option "<<flag<<"\n";return 2;}
         if (!hasValue) { std::cerr << "option " << flag << " needs a value\n"; return 2; }
         if (flag == "--topics") topicsPath = argv[++i];
         else if (flag == "--save") saveDir = argv[++i];
         else if (flag == "--record") recordDir = argv[++i];
         else if (flag == "--height-min") heightMin = std::stof(argv[++i]);
         else if (flag == "--height-max") heightMax = std::stof(argv[++i]);
+        else if (flag == "--record-max-frames") maxRecordFrames = std::stoi(argv[++i]);
+        else if (flag == "--record-max-mb") maxRecordMB = std::stoi(argv[++i]);
         else if (flag == "--interface") ++i;  // checked by VisionStudentThread on /proc/self/cmdline
-        else if (flag == "--seconds") seconds = std::atof(argv[++i]);
+        else if (flag == "--seconds") seconds = std::stod(argv[++i]);
         else { std::cerr << "unknown option " << flag << "\n"; return 2; }
     }
     if (headless && saveDir.empty() && recordDir.empty()) { std::cerr << "--headless needs --save or --record\n"; return 2; }
     if (!std::isfinite(heightMin) || !std::isfinite(heightMax) || heightMin >= heightMax ||
-        !std::isfinite(seconds) || seconds < 0) { std::cerr << "invalid range/duration\n"; return 2; }
+        !std::isfinite(seconds) || seconds < 0 || maxRecordFrames<1 || maxRecordFrames>100000 ||
+        maxRecordMB<1 || maxRecordMB>10240) { std::cerr << "invalid range/duration/record limits\n"; return 2; }
     for (const auto& path : {saveDir, recordDir}) {
         if (!path.empty() && fs::exists(path)) { std::cerr << "output directory already exists: " << path << "\n"; return 2; }
     }
@@ -149,6 +161,15 @@ int runViewer(int argc, char** argv) {
         std::cerr << "bundle needs policy_vrl_student.onnx and student_decoder.onnx (export/gast_student_decoder.py)\n";
         return 2;
     }
+    nlohmann::json manifest;
+    std::ifstream manifestStream(bundle/"manifest.json");manifestStream >> manifest;
+    if(manifest.value("student_decoder_contract","")!="gast.student_decoder.v1" ||
+       !manifest.contains("deployment_hashes") ||
+       !manifest["deployment_hashes"].contains("student_decoder.onnx") ||
+       !manifest["deployment_hashes"].contains("student_decoder.json")) {
+        std::cerr<<"UNVERIFIED decoder: missing manifest binding; use a verified NEW bundle\n";return 2;
+    }
+    std::cerr<<"Decoder contract declared; hash/parity verification requires run_viewer.py (direct C++ does not hash).\n";
     VisionStudentThread student(studentOnnx.string(), 5);
     if (!student.ok()) { std::cerr << "student failed to load (GAST students run in loopback simulation only)\n"; return 1; }
     if (!student.gastStudent()) { std::cerr << "decoder view supports the GAST student (5-input ONNX) only\n"; return 2; }
@@ -180,14 +201,19 @@ int runViewer(int argc, char** argv) {
     double rate = 0;
     bool paused = false;
     int saved = 0;
+    std::unique_ptr<decoder_diagnostics::AsyncRecorder> recorder;
     if (!saveDir.empty()) fs::create_directories(saveDir);
     if (!recordDir.empty()) {
         fs::create_directories(recordDir);
         for (const auto& name : {"manifest.json","student_decoder.json"})
             if (fs::is_regular_file(bundle/name)) fs::copy_file(bundle/name,fs::path(recordDir)/name);
+        std::cerr<<"record estimate ~654 KB/frame, ~8 MB/s at 12.8 Hz; queue=2 drop-on-full; limits "
+                 <<maxRecordFrames<<" frames, "<<maxRecordMB<<" MiB\n";
+        recorder=std::make_unique<decoder_diagnostics::AsyncRecorder>(recordDir,maxRecordFrames,uint64_t(maxRecordMB)*1024*1024);
     }
 
     while (true) {
+        if(recorder&&!recorder->error().empty())throw std::runtime_error(recorder->error());
         const bool have = !paused && student.latestDebug(snap) && snap.sequence != shown;
         if (have) {
             const auto finite = [](const auto& values) {
@@ -209,19 +235,9 @@ int runViewer(int argc, char** argv) {
             shown = snap.sequence;
             ++rateCount;
             if (!recordDir.empty()) {
-                const fs::path path = fs::path(recordDir) / cv::format("frame_%012llu.json", (unsigned long long)shown);
-                if (fs::exists(path)) { std::cerr << "record collision\n"; return 2; }
-                const fs::path temp = path.string()+".tmp";
-                cv::FileStorage file(temp.string(), cv::FileStorage::WRITE | cv::FileStorage::FORMAT_JSON);
-                if (!file.isOpened()) { std::cerr << "cannot open recording\n"; return 2; }
-                file << "schema" << "gast.decoder.frame.v1" << "replica" << 1
-                     << "sequence" << std::to_string(shown) << "input_stamp_ms" << std::to_string(snap.inputStampMs)
-                     << "observer_ms" << std::to_string(monoMs()) << "bundle" << bundle.string()
-                     << "topics_source" << topics.source() << "capture_pose_status" << "unavailable"
-                     << "oracle_status" << "unavailable" << "frames" << snap.frames << "hidden" << snap.hidden
-                     << "latent" << std::vector<float>(snap.latent.begin(),snap.latent.end()) << "decoded" << decoded;
-                file.release();
-                fs::rename(temp,path);
+                decoder_diagnostics::Frame frame{shown,snap.inputStampMs,monoMs(),bundle.string(),topics.source(),
+                    snap.frames,snap.hidden,std::vector<float>(snap.latent.begin(),snap.latent.end()),decoded};
+                recorder->submit(std::move(frame)); // bounded queue: never wait on disk in display loop
             }
         }
         if (monoMs() - rateStart >= 1000) { rate = rateCount * 1000.0 / (monoMs() - rateStart); rateCount = 0; rateStart = monoMs(); }
@@ -286,6 +302,7 @@ int runViewer(int argc, char** argv) {
             std::cout << "saved " << path << "\n";
         }
     }
+    if(recorder){recorder->close();recorder->report();if(!recorder->error().empty())return 2;}
     return 0;
 }
 
