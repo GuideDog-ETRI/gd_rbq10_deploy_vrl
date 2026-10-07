@@ -24,6 +24,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <stdexcept>
 
 #include <onnxruntime_cxx_api.h>
 #include <opencv2/opencv.hpp>
@@ -67,7 +68,7 @@ cv::Mat cameraTile(const float* plane, bool depth) {
 }
 
 // Decoded channel as a grid panel: rows = forward x (+0.8 m top), cols = lateral y (+0.5 m left).
-cv::Mat gridPanel(const float* decoded, int channel, float lo, float hi, int colormap) {
+cv::Mat gridPanel(const float* decoded, int channel, float lo, float hi, int colormap, bool dimVisibility) {
     cv::Mat u8(kCols, kRows, CV_8U);
     for (int r = 0; r < kRows; ++r)         // r: y index, -0.5 .. +0.5
         for (int c = 0; c < kCols; ++c) {   // c: x index, -0.8 .. +0.8
@@ -78,6 +79,12 @@ cv::Mat gridPanel(const float* decoded, int channel, float lo, float hi, int col
     cv::Mat big, colour;
     cv::resize(u8, big, {kGridW, kGridH}, 0, 0, cv::INTER_NEAREST);
     cv::applyColorMap(big, colour, colormap);
+    if (dimVisibility && channel != 1)
+        for (int row=0; row<kRows; ++row) for (int col=0; col<kCols; ++col)
+            if (decoded[(row*kCols+col)*kChannels+1] < .5f) {
+                auto cell=colour(cv::Rect((kRows-1-row)*kCell,(kCols-1-col)*kCell,kCell,kCell));
+                cell.convertTo(cell,-1,.25);
+            }
     // Robot footprint (about 0.70 x 0.30 m) and heading; cell centres are 0.1 m apart.
     const auto px = [](float x, float y) {
         return cv::Point(static_cast<int>((0.5f - y) / 0.1f * kCell + kCell / 2),
@@ -99,28 +106,39 @@ void colourbar(cv::Mat& img, cv::Point at, int width, int colormap, const std::s
 }
 }  // namespace
 
-int main(int argc, char** argv) {
+int runViewer(int argc, char** argv) {
     if (argc < 2) {
         std::cerr << "usage: student-decoder-viewer <bundle dir> --interface lo --sim [--topics <conf>] [--save <dir>] [--headless [--seconds N]]\n";
         return 2;
     }
     const fs::path bundle = argv[1];
-    std::string topicsPath, saveDir;
+    std::string topicsPath, saveDir, recordDir;
+    float heightMin = -.25f, heightMax = .35f;
     bool headless = false;
+    bool dimVisibility = false;
     double seconds = 0;
     for (int i = 2; i < argc; ++i) {
         const std::string flag = argv[i];
         const bool hasValue = i + 1 < argc;
         if (flag == "--sim") continue;
         if (flag == "--headless") { headless = true; continue; }
+        if (flag == "--dim-visibility") { dimVisibility = true; continue; }
         if (!hasValue) { std::cerr << "option " << flag << " needs a value\n"; return 2; }
         if (flag == "--topics") topicsPath = argv[++i];
         else if (flag == "--save") saveDir = argv[++i];
+        else if (flag == "--record") recordDir = argv[++i];
+        else if (flag == "--height-min") heightMin = std::stof(argv[++i]);
+        else if (flag == "--height-max") heightMax = std::stof(argv[++i]);
         else if (flag == "--interface") ++i;  // checked by VisionStudentThread on /proc/self/cmdline
         else if (flag == "--seconds") seconds = std::atof(argv[++i]);
         else { std::cerr << "unknown option " << flag << "\n"; return 2; }
     }
-    if (headless && saveDir.empty()) { std::cerr << "--headless needs --save <dir>\n"; return 2; }
+    if (headless && saveDir.empty() && recordDir.empty()) { std::cerr << "--headless needs --save or --record\n"; return 2; }
+    if (!std::isfinite(heightMin) || !std::isfinite(heightMax) || heightMin >= heightMax ||
+        !std::isfinite(seconds) || seconds < 0) { std::cerr << "invalid range/duration\n"; return 2; }
+    for (const auto& path : {saveDir, recordDir}) {
+        if (!path.empty() && fs::exists(path)) { std::cerr << "output directory already exists: " << path << "\n"; return 2; }
+    }
     if (!topicsPath.empty()) setenv("RBQ_VISION_TOPICS", topicsPath.c_str(), 1);  // VisionStudentThread reads it
     const VisionTopics topics = VisionTopics::load();
     std::cout << "topics (" << topics.source() << "): " << topics.depthTopic(0) << ", " << topics.irTopic(0)
@@ -163,23 +181,54 @@ int main(int argc, char** argv) {
     bool paused = false;
     int saved = 0;
     if (!saveDir.empty()) fs::create_directories(saveDir);
+    if (!recordDir.empty()) {
+        fs::create_directories(recordDir);
+        for (const auto& name : {"manifest.json","student_decoder.json"})
+            if (fs::is_regular_file(bundle/name)) fs::copy_file(bundle/name,fs::path(recordDir)/name);
+    }
 
     while (true) {
         const bool have = !paused && student.latestDebug(snap) && snap.sequence != shown;
         if (have) {
+            const auto finite = [](const auto& values) {
+                return std::all_of(values.begin(), values.end(), [](float x){ return std::isfinite(x); });
+            };
+            if (snap.frames.size()!=4*2*kH*kW || snap.hidden.size()!=6116 ||
+                !finite(snap.frames) || !finite(snap.hidden) || !finite(snap.latent)) {
+                std::cerr << "invalid replica snapshot\n"; return 2;
+            }
             const std::array<int64_t, 2> shape{1, static_cast<int64_t>(snap.hidden.size())};
             Ort::Value in = Ort::Value::CreateTensor<float>(mem, snap.hidden.data(), snap.hidden.size(), shape.data(), 2);
             auto outs = decoder.Run(Ort::RunOptions{nullptr}, inNames, &in, 1, outNames, 1);
+            if (outs[0].GetTensorTypeAndShapeInfo().GetShape()!=std::vector<int64_t>{1,kCells,kChannels}) {
+                std::cerr << "decoder output shape mismatch\n"; return 2;
+            }
             const float* d = outs[0].GetTensorMutableData<float>();
             std::copy(d, d + kCells * kChannels, decoded.begin());
+            if (!finite(decoded)) { std::cerr << "non-finite decoder result\n"; return 2; }
             shown = snap.sequence;
             ++rateCount;
+            if (!recordDir.empty()) {
+                const fs::path path = fs::path(recordDir) / cv::format("frame_%012llu.json", (unsigned long long)shown);
+                if (fs::exists(path)) { std::cerr << "record collision\n"; return 2; }
+                const fs::path temp = path.string()+".tmp";
+                cv::FileStorage file(temp.string(), cv::FileStorage::WRITE | cv::FileStorage::FORMAT_JSON);
+                if (!file.isOpened()) { std::cerr << "cannot open recording\n"; return 2; }
+                file << "schema" << "gast.decoder.frame.v1" << "replica" << 1
+                     << "sequence" << std::to_string(shown) << "input_stamp_ms" << std::to_string(snap.inputStampMs)
+                     << "observer_ms" << std::to_string(monoMs()) << "bundle" << bundle.string()
+                     << "topics_source" << topics.source() << "capture_pose_status" << "unavailable"
+                     << "oracle_status" << "unavailable" << "frames" << snap.frames << "hidden" << snap.hidden
+                     << "latent" << std::vector<float>(snap.latent.begin(),snap.latent.end()) << "decoded" << decoded;
+                file.release();
+                fs::rename(temp,path);
+            }
         }
         if (monoMs() - rateStart >= 1000) { rate = rateCount * 1000.0 / (monoMs() - rateStart); rateCount = 0; rateStart = monoMs(); }
 
         cv::Mat canvas(height, width, CV_8UC3, cv::Scalar(25, 25, 25));
         const int64_t age = snap.sequence ? monoMs() - snap.inputStampMs : -1;
-        text(canvas, "LEFT: exact student input tensor (4 belly cameras, depth / IR)   RIGHT: terrain decoded from the student's hidden state",
+        text(canvas, "READ-ONLY REPLICA (NOT Pilot hidden) | LEFT: replica input | RIGHT: auxiliary terrain predictions | oracle unavailable",
              {kMargin, 18}, .45);
         text(canvas, "bundle " + bundle.filename().string() + "   step " + std::to_string(snap.sequence) + "   input age " +
              (age < 0 ? std::string("--") : std::to_string(age)) + " ms   " + cv::format("%.1f", rate) + " steps/s" +
@@ -200,10 +249,10 @@ int main(int argc, char** argv) {
                 const int colormap = heightChannel ? cv::COLORMAP_TURBO : cv::COLORMAP_VIRIDIS;
                 const int x = gx0 + (ch % 3) * (kGridW + kMargin), y = top + (ch / 3) * (kLabel + kGridH + 26 + kMargin);
                 text(canvas, kChannelTitle[ch], {x, y + 14});
-                gridPanel(decoded.data(), ch, heightChannel ? -0.25f : 0.f, heightChannel ? 0.35f : 1.f, colormap)
+                gridPanel(decoded.data(), ch, heightChannel ? heightMin : 0.f, heightChannel ? heightMax : 1.f, colormap, dimVisibility)
                     .copyTo(canvas(cv::Rect(x, y + kLabel, kGridW, kGridH)));
                 colourbar(canvas, {x, y + kLabel + kGridH + 4}, kGridW, colormap,
-                          heightChannel ? "-0.25 up" : "0", heightChannel ? "+0.35 down" : "1");
+                          heightChannel ? cv::format("%.2f up",heightMin) : "0", heightChannel ? cv::format("%.2f down",heightMax) : "1");
             }
             // Latent sent to the actor (32 values, tanh range).
             const int ly = top + std::max(camBlockH, gridBlockH) + 10, lw = 12;
@@ -226,7 +275,7 @@ int main(int argc, char** argv) {
 
         if (!saveDir.empty() && have) cv::imwrite((fs::path(saveDir) / cv::format("decoded_%06llu.png", (unsigned long long)shown)).string(), canvas);
         if (seconds > 0 && monoMs() - startMs > seconds * 1000) break;
-        if (headless) { cv::waitKey(1); std::this_thread::sleep_for(std::chrono::milliseconds(20)); continue; }
+        if (headless) { std::this_thread::sleep_for(std::chrono::milliseconds(20)); continue; }
         cv::imshow(kWindow, canvas);
         const int key = cv::waitKey(30);
         if (key == 27 || cv::getWindowProperty(kWindow, cv::WND_PROP_VISIBLE) < 1) break;
@@ -238,4 +287,9 @@ int main(int argc, char** argv) {
         }
     }
     return 0;
+}
+
+int main(int argc, char** argv) {
+    try { return runViewer(argc,argv); }
+    catch (const std::exception& e) { std::cerr << "decoder viewer: " << e.what() << "\n"; return 2; }
 }

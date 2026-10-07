@@ -1,3 +1,4 @@
+#include "VisionTopics.hpp"
 // Read-only DDS timing experiment. No publishers, robot commands, or inference.
 #include <rbq_sdk/dds/Subscriber.hpp>
 #include <rbq_sdk/idl/ros2/CompressedImage_.hpp>
@@ -18,7 +19,7 @@ int main(){
     std::array<Channel,8> channels{}; std::mutex mutex;
     std::vector<std::unique_ptr<rbq_sdk::Subscriber<Msg>>> subs;
     for(int i=0;i<8;++i){
-        std::string topic="rt/rbq/vision/sensor_"+std::to_string(i/2)+(i%2?"/ir/compressed":"/depth/compressed");
+        std::string topic=(i%2?VisionTopics::load().irTopic(i/2):VisionTopics::load().depthTopic(i/2));
         subs.push_back(std::make_unique<rbq_sdk::Subscriber<Msg>>([&,i](const Msg& message){
             std::lock_guard<std::mutex> guard(mutex); auto& c=channels[i];const auto now=ms();
             if(c.count) c.gap=std::max(c.gap,now-c.stamp); c.stamp=now;++c.count;

@@ -5,9 +5,9 @@ During distillation ``spatial_head`` (Linear 32 -> 6) decodes each cell into the
 gd_lab.gast.geometry.targets; this file exports that head alone so a viewer can show, next to the camera
 input, the terrain the student's hidden state encodes. The policy ONNX (student_gast.onnx) is not changed.
 
-  python3 export/gast_student_decoder.py --bundle gast/<bundle name> [--checkpoint <student .pt>]
+  python3 export/gast_student_decoder.py --bundle gast/<bundle name> --output-dir <new directory> [--checkpoint <student .pt>]
       (default checkpoint: the bundle's own student_checkpoint.pt)
-      -> resources/policy/gast/<bundle>/student_decoder.onnx + student_decoder.json
+      -> <new directory>/student_decoder.onnx + student_decoder.json (source bundle untouched)
 
 Output decoded[1,187,6], cell = row*17 + col, row = lateral y from -0.5 m (right) to +0.5 m (left),
 col = forward x from -0.8 m to +0.8 m, yaw-aligned body frame:
@@ -53,27 +53,29 @@ class Decoder(nn.Module):
         return torch.cat((out[..., :1], torch.sigmoid(out[..., 1:])), -1)
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--bundle", required=True, help="bundle under resources/policy, e.g. gast/gastv21_2000_student17200_top1_20261008")
-    ap.add_argument("--checkpoint", help="GAST student checkpoint; default <bundle>/student_checkpoint.pt")
-    args = ap.parse_args()
-    args.checkpoint = args.checkpoint or str(ROOT / "resources/policy" / args.bundle / "student_checkpoint.pt")
-    ckpt = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
+def export_decoder(checkpoint, out_dir):
+    torch.set_num_threads(1)
+    torch.manual_seed(42)
+    ckpt = torch.load(checkpoint, map_location="cpu", weights_only=False)
     if ckpt.get("student_arch") != "gast_spatiotemporal_v1":
         raise SystemExit(f"not a GAST student checkpoint: {ckpt.get('student_arch')}")
     student = GastStudent(**ckpt.get("student_config", {})).eval()
+    if student.gru_hidden_dim != 6116:
+        raise ValueError("decoder requires the exact 6116-dimensional GAST contract")
     student.load_state_dict(ckpt["model"], strict=True)
     decoder = Decoder(student.spatial_head).eval()
-    out_dir = ROOT / "resources/policy" / args.bundle
-    if not out_dir.is_dir():
-        raise SystemExit(f"bundle not found: {out_dir}")
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    if any((out_dir / n).exists() for n in ("student_decoder.onnx", "student_decoder.json")):
+        raise FileExistsError("decoder outputs already exist; use a new output directory")
     onnx_path = out_dir / "student_decoder.onnx"
     torch.onnx.export(decoder, (torch.zeros(1, student.gru_hidden_dim),), str(onnx_path), opset_version=17,
                       dynamo=False, input_names=["hidden"], output_names=["decoded"])
 
     # Parity: the decoder applied to hidden_out must equal the spatial output of the same student step.
-    session = ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
+    options = ort.SessionOptions()
+    options.intra_op_num_threads = options.inter_op_num_threads = 1
+    session = ort.InferenceSession(str(onnx_path), options, providers=["CPUExecutionProvider"])
     hidden, worst = torch.zeros(1, student.gru_hidden_dim), 0.0
     with torch.no_grad():
         for step in range(6):
@@ -85,14 +87,34 @@ def main():
             worst = max(worst, float(np.abs(actual - expected).max()))
     if worst >= 1e-4:
         raise SystemExit(f"decoder parity failed: {worst}")
-    meta = {"onnx": onnx_path.name, "input": "hidden_out of student_gast.onnx [1,6116]", "output": "decoded[1,187,6]",
+    import hashlib
+    meta = {"schema": "gast.student_decoder.v1", "student_arch": ckpt["student_arch"],
+            "source_sha256": hashlib.sha256(Path(checkpoint).read_bytes()).hexdigest(),
+            "onnx_sha256": hashlib.sha256(onnx_path.read_bytes()).hexdigest(),
+            "camera_contract": ckpt.get("camera_contract"), "input_shape": [1,6116], "output_shape": [1,187,6],
+            "onnx": onnx_path.name, "input": "hidden_out of student_gast.onnx [1,6116]", "output": "decoded[1,187,6]",
             "channels": CHANNEL_NAMES, "grid": {"rows": 11, "cols": 17, "row_axis": "y lateral, -0.5..+0.5 m",
                                                 "col_axis": "x forward, -0.8..+0.8 m", "frame": "yaw-aligned body"},
             "height_note": "scanner_z - ground_z - 0.5 m; flat ground under the robot reads about 0",
-            "source_checkpoint": str(Path(args.checkpoint).resolve()), "student_iteration": ckpt.get("iteration"),
+            "source_checkpoint": str(Path(checkpoint).resolve()), "student_iteration": ckpt.get("iteration"),
             "teacher_sha256": ckpt.get("teacher_sha256"), "parity_max_abs_error": worst}
-    (out_dir / "student_decoder.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False) + "\n")
-    print(json.dumps({"output": str(onnx_path), "parity_max_abs_error": worst}))
+    (out_dir / "student_decoder.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False, allow_nan=False) + "\n")
+    return meta
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--bundle", required=True)
+    ap.add_argument("--checkpoint")
+    ap.add_argument("--output-dir", required=True, help="NEW independent output directory; source bundle is never modified")
+    args = ap.parse_args()
+    source = (ROOT / "resources/policy" / args.bundle).resolve()
+    if not source.is_relative_to((ROOT / "resources/policy").resolve()):
+        ap.error("bundle must be under resources/policy")
+    out = Path(args.output_dir).resolve()
+    if out.exists():
+        ap.error("--output-dir must not exist")
+    checkpoint = args.checkpoint or str(source / "student_checkpoint.pt")
+    print(json.dumps(export_decoder(checkpoint, out), indent=2))
 
 
 if __name__ == "__main__":

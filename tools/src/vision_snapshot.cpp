@@ -1,3 +1,4 @@
+#include "VisionTopics.hpp"
 // vision_snapshot — Mujoco의 시뮬 카메라(BT0-3/FT0/RR0)가 DDS로 뿌리는
 // rt/rbq/vision/sensor_<id>/<rgb|ir|depth>/compressed 토픽에서 프레임 한 장을
 // 받아 파일로 저장한다. 실제 뷰어(GUI)가 없어서, "데이터가 실제로 흐르는지"를
@@ -32,7 +33,7 @@ int main(int argc, char** argv) {
         std::cerr << "stream must be 'rgb', 'ir', or 'depth'\n";
         return 2;
     }
-    const std::string topic = "rt/rbq/vision/sensor_" + sensorId + "/" + stream + "/compressed";
+    const std::string topic = (stream=="depth"?VisionTopics::load().depthTopic(std::stoi(sensorId)):stream=="ir"?VisionTopics::load().irTopic(std::stoi(sensorId)):"rt/rbq/vision/sensor_" + sensorId + "/rgb/compressed");
     const std::string defaultExt = (stream == "depth") ? ".png" : ".jpg";
     const std::string outPath = (argc > 3) ? argv[3] : ("snapshot_sensor" + sensorId + "_" + stream + defaultExt);
 
