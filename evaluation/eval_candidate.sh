@@ -9,6 +9,8 @@ source "$(dirname "$0")/common.sh"
 NAME=$1; REPS=$2; shift 2
 LAUNCH=("$@")
 OUT="$REPO/records/$NAME/$(date +%Y%m%d_%H%M)"; mkdir -p "$OUT"
+# one evaluation at a time (gap_course stops the simulator between runs, so sim_busy alone races)
+exec 9>"$REPO/logs/eval.lock"; flock 9
 # never take the simulator from someone using it
 while sim_busy; do echo "$(date +%T) simulator busy, waiting"; sleep 300; done
 for vx in 0.60 1.00 1.20; do
