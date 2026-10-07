@@ -125,10 +125,16 @@ WalkConfig WalkConfig::load() {
     const std::string name =
         value("RBQ_POLICY_FILE",
               value(sdk ? "RBQ_POLICY_SDK" : "RBQ_POLICY_OURS",
-                    sdk ? "rbq10" : "dwb/d_v3.6.21_b1_18"));
+                    sdk ? "rbq10" : ""));
 
     const std::string path = std::string(kPolicyRoot) + name;
     cfg.m_policyPath = path;
+    if (name.empty()) {
+        // No blind default here: the vision launchers always set RBQ_POLICY_FILE.
+        FILE_LOG_AS(logERROR, "WALK") << "mode=" << cfg.modeName()
+            << " needs RBQ_POLICY_FILE (scripts/<method>/<bundle>/run_sim.sh sets it)";
+        cfg.m_policyPath.clear();
+    }
 
     // 여기서 안 막으면 sdk 라고 적어 놓고 우리 정책이 도는 조합이 조용히 성립한다.
     // 걷기는 걷고 로그도 멀쩡해서 아무도 모른다 — 그래서 기동에서 끊는다.

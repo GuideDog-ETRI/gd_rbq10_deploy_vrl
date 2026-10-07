@@ -1,0 +1,9 @@
+#!/bin/bash
+# Shim used by evaluation/: run every "-e script" of a gnome-terminal call detached in the background (no windows; logs in logs/eval_tabs).
+L="${EVAL_TABS_DIR:-$(cd "$(dirname "$0")/../../logs" && pwd)/eval_tabs}"; mkdir -p "$L"
+while [ $# -gt 0 ]; do
+  if [ "$1" = "-e" ]; then s=$2; shift 2
+    setsid bash -c "exec bash '$s'" < /dev/null > "$L/$(basename "$s").log" 2>&1 &
+  else shift; fi
+done
+exit 0

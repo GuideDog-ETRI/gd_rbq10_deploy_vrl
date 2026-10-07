@@ -16,7 +16,11 @@ inline bool studentUsesAge(const std::string& architecture, const std::string& a
     return true;
 }
 
-inline void setStudentAge(std::array<float, 64>& hidden, bool enabled,
-                          int64_t nowMs, int64_t captureMs) {
-    if (enabled) hidden[63] = std::clamp(static_cast<float>(nowMs-captureMs) / 1000.f, 0.f, 1.f);
+inline void setStudentAge(float* hidden, size_t size, bool enabled, int64_t nowMs, int64_t captureMs) {
+    if (enabled && size == 64) hidden[63] = std::clamp(static_cast<float>(nowMs-captureMs) / 1000.f, 0.f, 1.f);
+    else if (enabled) throw std::runtime_error("hidden[63] age contract needs a 64-wide hidden state");
+}
+
+inline void setStudentAge(std::array<float, 64>& hidden, bool enabled, int64_t nowMs, int64_t captureMs) {
+    setStudentAge(hidden.data(), hidden.size(), enabled, nowMs, captureMs);
 }

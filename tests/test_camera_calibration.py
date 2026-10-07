@@ -20,7 +20,7 @@ import check_camera_calibration as cc  # noqa: E402
 
 NEW_SDK = Path(os.environ.get("RBQ_NEW_SDK", Path.home() / "gd_project/RBQ_vendor_new/RBQ-nightly"))
 LEGACY_SDK = Path(os.environ.get("RBQ_LEGACY_SDK", Path.home() / "gd_project/RBQ_vendor/RBQ-nightly"))
-LEGACY_POLICY = ROOT / "resources/policy/rvld/arm4_teacher5674_student20000_env128/policy_vrl.onnx"
+LEGACY_POLICY = ROOT / "archive/cvtt/policy/rvld_arm4_teacher5674_student20000_env128/policy_vrl.onnx"
 ALLOW = {cc.ALLOW_LEGACY_ENV: "1"}
 
 
@@ -220,7 +220,10 @@ class Policy(unittest.TestCase):
                 contract = json.loads(manifest.read_text())["camera_contract"]
                 # Bundles exported before the switch carry no ONNX stamp and stay vendor_legacy (never relabelled);
                 # a vendor_new bundle must say so in its student ONNX too.
-                expected = cc.policy_profile(manifest.parent / "policy_vrl.onnx")
+                # Oracle bundles carry their teacher terrain encoder instead of a camera student.
+                encoder = next((manifest.parent / n for n in ("encoder.onnx", "gast_encoder.onnx")
+                                if (manifest.parent / n).is_file()), None)
+                expected = cc.policy_profile(manifest.parent / "policy_vrl.onnx", encoder)
                 self.assertEqual(contract["profile"], expected)
                 self.assertEqual(cc._contract_problems(contract, expected), [])
 
@@ -301,8 +304,7 @@ class Launchers(unittest.TestCase):
     def test_run_sim_vrl_refuses_a_legacy_policy_on_the_new_sdk_before_building_or_killing(self):
         if not (NEW_SDK / cc.SDK_MODEL).is_file():
             self.skipTest(f"{NEW_SDK} not present")
-        for script in ("scripts/run_sim_vrl.sh", "gast/runtime/scripts/run_sim_vrl.sh",
-                       "bivt/oracle_runtime/scripts/run_sim_vrl.sh"):
+        for script in ("scripts/common/run_sim_vrl.sh",):
             for allow in ("", "1"):
                 with self.subTest(script=script, allow=allow), tmpdir() as d:
                     env, log = self.stub_env(d, RBQ_DIR=str(NEW_SDK), GD_LAB_ALLOW_LEGACY_CAMERA=allow,
@@ -317,7 +319,7 @@ class Launchers(unittest.TestCase):
             self.skipTest(f"{NEW_SDK} not present")
         with tmpdir() as d:
             env, log = self.stub_env(d, RBQ_DIR=str(NEW_SDK), RBQ_POLICY_FILE=str(LEGACY_POLICY))
-            result = subprocess.run(["bash", str(ROOT / "scripts/run_sim_vrl.sh"), "--check"],
+            result = subprocess.run(["bash", str(ROOT / "scripts/common/run_sim_vrl.sh"), "--check"],
                                     capture_output=True, text=True, env=env)
             self.assertEqual(result.returncode, 2)
             self.assertIn("CAMERA CONTRACT REFUSED", result.stderr)
@@ -326,8 +328,7 @@ class Launchers(unittest.TestCase):
         sdks = [("unapproved", None)]
         if (LEGACY_SDK / cc.SDK_MODEL).is_file():
             sdks.append(("legacy", LEGACY_SDK))
-        for script in ("simulation/mujoco/rbq_sim.sh", "gast/runtime/simulation/mujoco/rbq_sim.sh",
-                       "bivt/oracle_runtime/simulation/mujoco/rbq_sim.sh"):
+        for script in ("simulation/mujoco/rbq_sim.sh",):
             for name, sdk in sdks:
                 with self.subTest(script=script, sdk=name), tmpdir() as d:
                     if sdk is None:
@@ -349,26 +350,15 @@ class Launchers(unittest.TestCase):
                     self.assertNotIn("벤더 스택", result.stdout + result.stderr)
 
     def test_no_launcher_selects_an_sdk_automatically(self):
-        for script in ("simulation/mujoco/rbq_sim.sh", "gast/runtime/simulation/mujoco/rbq_sim.sh",
-                       "bivt/oracle_runtime/simulation/mujoco/rbq_sim.sh"):
+        for script in ("simulation/mujoco/rbq_sim.sh",):
             text = (ROOT / script).read_text()
             self.assertNotIn("RBQ_DIR_CANDIDATES", text)
             self.assertIn('RBQ_DIR="${RBQ_DIR:-$HOME/gd_project/RBQ_vendor_new/RBQ-nightly}"', text)
 
-    def test_runtime_copies_stay_identical_to_the_canonical_tools(self):
-        for runtime in ("gast/runtime", "bivt/oracle_runtime"):
-            for name in ("check_camera_calibration.py", "prepare_payload.py"):
-                with self.subTest(runtime=runtime, name=name):
-                    self.assertEqual((ROOT / runtime / "simulation/mujoco" / name).read_bytes(),
-                                     (MUJOCO / name).read_bytes())
-            self.assertEqual((ROOT / runtime / "scripts/export_safe_vrl_pair.py").read_bytes(),
-                             (ROOT / "scripts/export_safe_vrl_pair.py").read_bytes())
-
     def test_reused_containers_must_see_the_current_host_files(self):
         # A bind mount pins the inode, not the path: after git recreated the terrain directory the old
         # GAST container saw an empty folder and MuJoCo could not open rbq_payload.xml (2026-10-06).
-        for script in ("simulation/mujoco/rbq_sim.sh", "gast/runtime/simulation/mujoco/rbq_sim.sh",
-                       "bivt/oracle_runtime/simulation/mujoco/rbq_sim.sh"):
+        for script in ("simulation/mujoco/rbq_sim.sh",):
             with self.subTest(script=script):
                 text = (ROOT / script).read_text()
                 reuse = text.split("재사용합니다.", 1)[1].split("TERRAIN_MOUNTS=()", 1)[0]
@@ -378,32 +368,23 @@ class Launchers(unittest.TestCase):
                 mujoco = text.split("camera_check_container() {", 1)[1].split("\n}\n", 1)[0]
                 self.assertIn('cmp -s - "${model}"', mujoco)
 
-    def test_runtime_pilots_match_the_shared_teacher_scan_constructor(self):
-        # gast/runtime/cvtt is a symlink to the root cvtt/, so its VisionStudentThread copy must pass the
-        # camera profile exactly like the root one (bivt/oracle_runtime keeps its own legacy cvtt copy).
-        for runtime in ("", "gast/runtime/"):
-            with self.subTest(runtime=runtime or "root"):
-                source = (ROOT / runtime / "perception/common/VisionStudentThread.cpp").read_text()
-                self.assertIn("std::make_unique<CvttTerrainScan>(xml, cameras)", source)
-                self.assertIn("resolveCameraProfile(", source)
-                self.assertEqual((ROOT / runtime / "perception/common/CameraProfile.hpp").read_bytes(),
-                                 (ROOT / "perception/common/CameraProfile.hpp").read_bytes())
-        self.assertTrue((ROOT / "gast/runtime/cvtt").is_symlink())
+    def test_pilot_builds_the_teacher_scan_from_the_resolved_camera_profile(self):
+        source = (ROOT / "perception/common/VisionStudentThread.cpp").read_text()
+        self.assertIn("std::make_unique<TerrainScan>(xml, cameras)", source)
+        self.assertIn("resolveCameraProfile(", source)
 
-    def test_gast_launcher_checks_cameras_before_its_ownership_marker(self):
-        text = (ROOT / "gast/deploy/d_v3.6.21_b1_18_bivt-ray/run_sim_common.sh").read_text()
-        run_part = text.split("esac", 2)[-1]
-        self.assertLess(run_part.index("camera_pair"), run_part.index("owned-launch"))
-        self.assertIn("camera_pair", text.split("--check)", 1)[1].split(";;", 1)[0])
+    def test_bundle_launcher_checks_cameras_before_its_ownership_marker(self):
+        text = (ROOT / "scripts/common/launch.sh").read_text()
+        run_part = text.split("esac", 1)[1]
+        self.assertLess(run_part.index("check_camera_calibration.py\" pair"), run_part.index('> "$marker"'))
 
 
 class Exporters(unittest.TestCase):
     def test_exporters_record_and_verify_the_camera_profile(self):
-        gast = (ROOT / "gast/tools/export_student.py").read_text()
-        self.assertIn("verify_camera_geometry()", gast)
-        self.assertIn("'camel.camera_profile':profile", gast)
-        self.assertIn("camera_profile='vendor_new'", (ROOT / "gast/src/student_onnx.py").read_text())
-        pair = (ROOT / "scripts/export_safe_vrl_pair.py").read_text()
+        gast = (ROOT / "export/gast_checkpoint.py").read_text()
+        self.assertIn('"camel.camera_profile"', gast)
+        self.assertIn("camera_profile='vendor_new'", (ROOT / "export/student_onnx.py").read_text())
+        pair = (ROOT / "export/vrl_pair.py").read_text()
         self.assertIn("camera_profile=contract['profile']", pair)
 
 

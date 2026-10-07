@@ -31,8 +31,6 @@ add_executable(policy-check
     ${CMAKE_SOURCE_DIR}/pilot/src/PolicyBackend.cpp
     ${CMAKE_SOURCE_DIR}/pilot/src/PolicyRuntime.cpp
     ${CMAKE_SOURCE_DIR}/perception/common/PolicyBackendVrl.cpp
-    ${CMAKE_SOURCE_DIR}/bavrl/src/BavrlBackend.cpp
-    ${CMAKE_SOURCE_DIR}/dwb/src/DwbBackend.cpp
     ${CMAKE_SOURCE_DIR}/perception/common/VisionStudentThread.cpp
 )
 target_include_directories(policy-check PRIVATE ${CMAKE_SOURCE_DIR}/pilot/src ${OpenCV_INCLUDE_DIRS})
@@ -51,8 +49,6 @@ add_executable(policy-smoke
     ${CMAKE_SOURCE_DIR}/pilot/src/PolicyBackend.cpp
     ${CMAKE_SOURCE_DIR}/pilot/src/PolicyRuntime.cpp
     ${CMAKE_SOURCE_DIR}/perception/common/PolicyBackendVrl.cpp
-    ${CMAKE_SOURCE_DIR}/bavrl/src/BavrlBackend.cpp
-    ${CMAKE_SOURCE_DIR}/dwb/src/DwbBackend.cpp
     ${CMAKE_SOURCE_DIR}/perception/common/VisionStudentThread.cpp
 )
 target_include_directories(policy-smoke PRIVATE ${CMAKE_SOURCE_DIR}/pilot/src ${OpenCV_INCLUDE_DIRS})
@@ -93,6 +89,5 @@ target_compile_options(student-age-contract-test PRIVATE -UNDEBUG)
 add_executable(camera-profile-test ${CMAKE_SOURCE_DIR}/tests/camera_profile_test.cpp)
 target_compile_options(camera-profile-test PRIVATE -UNDEBUG)
 
-include_directories(${CMAKE_SOURCE_DIR}/bavrl/src ${CMAKE_SOURCE_DIR}/pilot/src)
+include_directories(${CMAKE_SOURCE_DIR}/pilot/src)
 
-include_directories(${CMAKE_SOURCE_DIR}/dwb/src)

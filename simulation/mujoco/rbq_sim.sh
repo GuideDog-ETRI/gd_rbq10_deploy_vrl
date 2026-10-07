@@ -357,9 +357,9 @@ cmd_stop() {
     local apps=()
     case "${target}" in
         motion) apps=(Motion) ;;
-        mujoco) apps=(Mujoco MujocoVrlSync) ;;
+        mujoco) apps=(Mujoco MujocoVrlSync MujocoGastSync) ;;
         gui)    apps=(GUI) ;;
-        all)    apps=(Motion Mujoco MujocoVrlSync GUI) ;;
+        all)    apps=(Motion Mujoco MujocoVrlSync MujocoGastSync GUI) ;;
         *)      echo "stop 대상: motion | mujoco | gui | all"; exit 1 ;;
     esac
     for a in "${apps[@]}"; do
@@ -450,9 +450,9 @@ case "${1:-}" in
     mujoco) camera_check_container
             VISION_ARG="--vision"
             MUJOCO_APP=Mujoco
-            [ "${RBQ_SIM_SYNC_VISION:-0}" = "1" ] && MUJOCO_APP=MujocoVrlSync
+            [ "${RBQ_SIM_SYNC_VISION:-0}" = "1" ] && MUJOCO_APP="${RBQ_SIM_SYNC_APP:-MujocoVrlSync}"
             MUJOCO_MODEL_ARG=""
-            [ "${MUJOCO_APP}" = "MujocoVrlSync" ] && MUJOCO_MODEL_ARG="--path /workspace/RBQ/resources/model/rbq_environment.xml"
+            [ "${MUJOCO_APP}" != "Mujoco" ] && MUJOCO_MODEL_ARG="--path /workspace/RBQ/resources/model/rbq_environment.xml"
             [ "${RBQ_SIM_VISION:-1}" = "0" ] && VISION_ARG=""
             MUJOCO_XDISPLAY="${MUJOCO_XDISPLAY:-:2}"
             # 3774x1439: empirically the max on this desktop (3840x2160 real

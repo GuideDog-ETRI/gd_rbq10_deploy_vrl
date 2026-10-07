@@ -1,7 +1,0 @@
-{
-  "source": "/home/user/gd_project/gd_rbq10_deploy_vrl/resources/policy/dwb/d_v3.6.21_b1_18",
-  "source_sha256": "56f67feda61963215a8cce6651600c1b5164b667c602d55451868ac5d4b5fcbf",
-  "change": "Only camel.policy.v1 policy_dt: 0.02 -> 0.01; graph unchanged",
-  "simulation_only": true,
-  "walking_validated": false
-}

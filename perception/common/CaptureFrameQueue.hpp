@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdint>
 #include <deque>
+#include <string>
 #include <vector>
 
 // External synchronization required. Only explicitly marked common-capture
@@ -12,6 +13,7 @@ public:
     struct Frame {
         int64_t captureNs = 0, receiveMs = 0;
         std::vector<uint8_t> bytes;
+        std::string poseTag;
     };
     using Batch = std::array<Frame, 8>;
     void push(size_t channel, Frame frame) {
