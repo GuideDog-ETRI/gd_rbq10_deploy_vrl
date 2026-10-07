@@ -3,7 +3,7 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/../../.." && pwd)"
 runtime="$repo/bivt/oracle_runtime"
-export RBQ_DIR=/home/user/gd_project/RBQ_vendor/RBQ-nightly
+export RBQ_DIR="${RBQ_DIR:-$([ "${GD_LAB_ALLOW_LEGACY_CAMERA:-}" = 1 ] && echo /home/user/gd_project/RBQ_vendor/RBQ-nightly || echo /home/user/gd_project/RBQ_vendor_new/RBQ-nightly)}"  # legacy SDK only with GD_LAB_ALLOW_LEGACY_CAMERA=1
 export RBQ_POLICY_FILE=bivt/ray7986_oracle/policy_vrl.onnx
 export RBQ_CVTT_TEACHER_ENCODER="$repo/resources/policy/bivt/ray7986_oracle/encoder.onnx"
 export RBQ_CVTT_TERRAIN_XML="$repo/simulation/terrains/vrl_progression/environment.xml"

@@ -25,13 +25,18 @@ def main():
     repo = Path(__file__).resolve().parents[2]
     if output != repo / "build/sync_mujoco_source":
         raise RuntimeError("output must be this repository's build/sync_mujoco_source")
+    # Start from the given SDK only: files left by another SDK version (e.g. the new SDK's LiDAR
+    # sources) would otherwise be compiled against the wrong headers.
+    shutil.rmtree(output / "src", ignore_errors=True)
     shutil.copytree(source / "src", output / "src", dirs_exist_ok=True)
     shutil.copyfile(repo / "simulation/mujoco/sync_mujoco/CMakeLists.txt", output / "CMakeLists.txt")
     shutil.copyfile(repo / "simulation/mujoco/sync_mujoco/BellyCaptureGroup.hpp", output / "src/BellyCaptureGroup.hpp")
     path = output / "src/main.cpp"
     text = path.read_text()
     start = text.index("void CameraThread(mujoco::Simulate* sim, const std::string &cameraName)\n{")
-    end = text.index("\nvoid PhysicsLoop(", start)
+    # Patch CameraThread only: the next top-level function is PhysicsLoop on the legacy SDK and
+    # LidarThread on the new SDK, whose own timing code must stay untouched.
+    end = text.index("\nvoid ", start + 1)
     camera = text[start:end]
     camera = replace_once(camera, "{\n    const int frame_width", "{\n    const bool belly = cameraName.rfind(\"BT\", 0) == 0;\n    static BellyCaptureGroup captureGroup;\n    const int frame_width")
     camera = camera.replace("glfwSwapInterval(1);", "glfwSwapInterval(0);")

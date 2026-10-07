@@ -158,6 +158,12 @@ pkill -KILL -x vision-viewer   2>/dev/null || true
 # ---- 컨테이너 ----------------------------------------------------------------
 echo "[run_sim_vrl] container up..."
 CONTAINER="${SIM_CONTAINER}" RBQ_SIM_TERRAIN_DIR="${VRL_TERRAIN_DIR}" IFACE=lo bash "${REPO_DIR}/simulation/mujoco/rbq_sim.sh" up || exit 2
+# The synchronized-camera simulator is built per SDK and installed into ${RBQ_DIR}/bin; the vendor SDK
+# does not ship it, so the first launch on a fresh SDK (e.g. vendor_new) builds it once.
+if [ "${RBQ_SIM_SYNC_VISION}" = "1" ] && [ ! -x "${RBQ_DIR}/bin/MujocoVrlSync" ]; then
+    echo "[run_sim_vrl] ${RBQ_DIR}/bin/MujocoVrlSync missing; building it once for this SDK..."
+    SIM_CONTAINER="${SIM_CONTAINER}" RBQ_DIR="${RBQ_DIR}" bash "${REPO_DIR}/simulation/mujoco/build_sync_mujoco.sh" || exit 2
+fi
 
 mkdir -p "${REPO_DIR}/logs"
 
@@ -184,7 +190,7 @@ else
     # MujocoVrlSync occasionally exits right after launch; retry a quick exit.
     for attempt in 1 2 3; do
         started=\$(date +%s)
-        RBQ_DIR='${RBQ_DIR}' GD_LAB_ALLOW_LEGACY_CAMERA='${GD_LAB_ALLOW_LEGACY_CAMERA:-}' CONTAINER='${SIM_CONTAINER}' RBQ_SIM_SYNC_VISION='${RBQ_SIM_SYNC_VISION}' RBQ_SIM_VISION=${RBQ_SIM_VISION} IFACE=lo bash '${REPO_DIR}/simulation/mujoco/rbq_sim.sh' mujoco
+        RBQ_DIR='${RBQ_DIR}' GD_LAB_ALLOW_LEGACY_CAMERA='${GD_LAB_ALLOW_LEGACY_CAMERA:-}' GD_LAB_TEMP_CAMERA_OVERRIDE='${GD_LAB_TEMP_CAMERA_OVERRIDE:-}' CONTAINER='${SIM_CONTAINER}' RBQ_SIM_SYNC_VISION='${RBQ_SIM_SYNC_VISION}' RBQ_SIM_VISION=${RBQ_SIM_VISION} IFACE=lo bash '${REPO_DIR}/simulation/mujoco/rbq_sim.sh' mujoco
         [ \$(( \$(date +%s) - started )) -ge 20 ] && break
         echo "[run_sim_vrl] MuJoCo exited within 20s (attempt \${attempt}/3) -- restarting..."
         sleep 2

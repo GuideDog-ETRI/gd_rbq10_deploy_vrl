@@ -7,7 +7,7 @@ import sys
 import tempfile
 import xml.etree.ElementTree as ET
 
-from check_camera_calibration import CameraContractError, check_model, sdk_profile
+from check_camera_calibration import PROFILES, CameraContractError, check_model, sdk_profile, temp_override
 
 
 def main():
@@ -54,6 +54,16 @@ def main():
                 raise FileNotFoundError(asset)
             relative = asset.relative_to(vendor)
             element.set("file", str(Path("/workspace/RBQ") / relative))
+    override = temp_override()  # TEMPORARY diagnostic: render BT0-BT3 with another profile (warned)
+    if override is not None:
+        geometry = PROFILES[override]
+        for index in range(4):
+            body = tree.find(f".//body[@name='BT{index}_body']")
+            camera = body.find(f"./camera[@name='BT{index}']")
+            body.set("pos", " ".join(format(x, ".7g") for x in geometry["positions"][index]))
+            body.set("quat", " ".join(format(x, ".7g") for x in geometry["quaternions"][index]))
+            camera.set("sensorsize", " ".join(format(x, ".7g") for x in geometry["sensor_size"]))
+        profile = f"{override} (TEMPORARY override of {profile})"
     # Write next to the target, verify the cameras actually written, then replace atomically:
     # a refused or failed run leaves any previous payload untouched.
     args.output.parent.mkdir(parents=True, exist_ok=True)

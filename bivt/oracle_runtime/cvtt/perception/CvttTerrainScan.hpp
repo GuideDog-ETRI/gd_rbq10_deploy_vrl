@@ -2,7 +2,9 @@
 
 // Simulation-only CVTT v2 terrain observation. The frozen teacher consumes
 // [camera-visible height(11x17), camera-visible validity(11x17)]. The grid and
-// pinhole projection reproduce the saved CVTT-7761 training contract.
+// pinhole projection reproduce the saved CVTT-7761 training contract. The camera
+// mounts follow the policy's camera profile (simulation/mujoco/check_camera_calibration.py
+// PROFILES): vendor_new by default, vendor_legacy for policies trained on the legacy SDK.
 
 #include <algorithm>
 #include <array>
@@ -23,7 +25,8 @@ public:
     struct Pose { Vec pos; Quat quat; };
     struct Box { Vec pos; Vec half; };
 
-    explicit CvttTerrainScan(const std::string& xmlPath) {
+    explicit CvttTerrainScan(const std::string& xmlPath, const std::string& profile = "vendor_new")
+        : m_camera(cameraFor(profile)) {
         std::ifstream file(xmlPath);
         if (!file) throw std::runtime_error("CVTT terrain XML cannot be opened: " + xmlPath);
         const std::string xml((std::istreambuf_iterator<char>(file)), {});
@@ -43,6 +46,33 @@ public:
         }
         if (m_boxes.empty())
             throw std::runtime_error("CVTT terrain XML contains no class=course boxes");
+    }
+
+    // GAST teacher: the full yaw-aligned grid, no camera visibility mask (training
+    // NoisyTerrain without its noise). Cells off the course boxes stay invalid.
+    std::array<float, 374> observeFull(const Pose& body) const {
+        std::array<float, 374> out{};
+        const float yaw = yawOf(normalized(body.quat));
+        const float cy = std::cos(yaw), sy = std::sin(yaw);
+        for (int yi = 0; yi < 11; ++yi) {
+            const float gy = (yi - 5) * .1f;
+            for (int xi = 0; xi < 17; ++xi) {
+                const float gx = (xi - 8) * .1f;
+                const float wx = body.pos[0] + cy * gx - sy * gy;
+                const float wy = body.pos[1] + sy * gx + cy * gy;
+                float z = -INFINITY;
+                for (const Box& box : m_boxes) {
+                    if (std::abs(wx - box.pos[0]) <= box.half[0] &&
+                        std::abs(wy - box.pos[1]) <= box.half[1])
+                        z = std::max(z, box.pos[2] + box.half[2]);
+                }
+                if (!std::isfinite(z)) continue;
+                const int index = yi * 17 + xi;
+                out[index] = 5.f * std::clamp(body.pos[2] - z - .5f, -1.f, 1.f);
+                out[kPoints + index] = 1.f;
+            }
+        }
+        return out;
     }
 
     std::array<float, 374> observe(const Pose& body,
@@ -73,13 +103,13 @@ public:
                 // terrain encoder uses height scans, not the IR channel directly.
                 bool visible = false;
                 for (int camera = 0; camera < 4; ++camera) {
-                    const Vec cameraPos = add(body.pos, rotate(bodyQuat, kMountPositions[camera]));
-                    const Quat ros = multiply(multiply(bodyQuat, normalized(kMountQuats[camera])), {0, 1, 0, 0});
+                    const Vec cameraPos = add(body.pos, rotate(bodyQuat, m_camera.positions[camera]));
+                    const Quat ros = multiply(multiply(bodyQuat, normalized(m_camera.quats[camera])), {0, 1, 0, 0});
                     const Vec optical = rotate(conjugate(ros), sub(point, cameraPos));
                     const float depth = optical[2];
                     if (!std::isfinite(depth) || depth < .15f || depth >= 5.f) continue;
-                    const int x = static_cast<int>(std::floor(42.15124215f * optical[0] / depth + 40.f));
-                    const int y = static_cast<int>(std::floor(40.59169938f * optical[1] / depth + 22.5f));
+                    const int x = static_cast<int>(std::floor(m_camera.fx * optical[0] / depth + 40.f));
+                    const int y = static_cast<int>(std::floor(m_camera.fy * optical[1] / depth + 22.5f));
                     if (x < 0 || x + 1 >= kWidth || y < 0 || y + 1 >= kHeight) continue;
                     const float* pixels = normalizedCameraFrames + camera * 2 * kWidth * kHeight;
                     bool match = true;
@@ -141,13 +171,23 @@ private:
         return std::atan2(2 * (q[0]*q[3] + q[1]*q[2]),
                           1 - 2 * (q[2]*q[2] + q[3]*q[3]));
     }
-    static constexpr std::array<Vec, 4> kMountPositions{{
-        { .36462f, 0, -.02663f }, { .26053f, 0, -.04759f },
-        { -.19515f, .0065f, -.04832f }, { -.352990f, -.000011f, -.020510f }
-    }};
-    static constexpr std::array<Quat, 4> kMountQuats{{
-        {0, .8191608f, 0, -.5735639f}, {0, -.6156417f, 0, .7880262f},
-        {0, -.7071046f, 0, .7071090f}, {.4993997f, .0263259f, .8647709f, -.0455865f}
-    }};
+    // camera-to-trunk, wxyz, OpenGL camera axes; fx/fy = pixels * focal 1.93 mm / sensor size.
+    struct Camera { std::array<Vec, 4> positions; std::array<Quat, 4> quats; float fx, fy; };
+    static Camera cameraFor(const std::string& profile) {
+        if (profile == "vendor_new")
+            return {{{{ .364f, 0, -.024919f }, { .26097f, 0, -.04582f },
+                      { -.19515f, .0065f, -.0465f }, { -.352082f, -.000011f, -.018938f }}},
+                    {{{0, -.1736482f, 0, .9848078f}, {0, .1218693f, 0, .9925462f},
+                      {0, 0, 0, 1}, {.9848078f, 0, .1736482f, 0}}},
+                    80 * .00193f / .003896f, 45 * .00193f / .002140f};
+        if (profile == "vendor_legacy")
+            return {{{{ .36462f, 0, -.02663f }, { .26053f, 0, -.04759f },
+                      { -.19515f, .0065f, -.04832f }, { -.352990f, -.000011f, -.020510f }}},
+                    {{{0, .8191608f, 0, -.5735639f}, {0, -.6156417f, 0, .7880262f},
+                      {0, -.7071046f, 0, .7071090f}, {.4993997f, .0263259f, .8647709f, -.0455865f}}},
+                    42.15124215f, 40.59169938f};
+        throw std::runtime_error("CVTT teacher scan: unknown camera profile '" + profile + "'");
+    }
+    Camera m_camera;
     std::vector<Box> m_boxes;
 };

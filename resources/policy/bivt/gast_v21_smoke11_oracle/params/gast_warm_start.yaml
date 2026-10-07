@@ -1,0 +1,33 @@
+source: /home/user/gd_project/gd_lab_vrl_teacher_reward2/gast/../checkpoints/teachers/bivt/ray_gap_clean_vendor_new_top1_21068_20261005/teacher/21068_top1.pt
+source_sha256: fa397d22a949e24f74312b5270b5954a4ddb15c7451ea85ba8f64dbeeb7c9501
+source_sha256_expected: fa397d22a949e24f74312b5270b5954a4ddb15c7451ea85ba8f64dbeeb7c9501
+source_iteration: 21068
+source_task: Gd-VrlGapFinetuneCleanRaycast-Rbq10-Dreamwaq-v0
+source_camera_profile: vendor_new
+cenet_optimizer_restored: true
+latent_head_zeroed: true
+learning_rates:
+  policy: 0.0001
+  terrain: 0.001
+copied: 45
+fresh_terrain: 24
+dropped_bivt_terrain: 8
+terrain_levels_restored: true
+task: Gd-GastGapCleanV21-Rbq10-Dreamwaq-v0
+train_arm_env: '4'
+reward_weights:
+  platform_gap_foot_drop: -2.0
+  platform_gap_crossing: 0.5
+  platform_gap_monitor: 1.0
+  platform_gap_intrusion: -3.0
+  platform_gap_clean: 0.5
+  gap_foothold_margin: -0.25
+  stair_foothold_margin: -0.2
+  gap_slot_probe: -1.0
+  stair_handle_disturbance: -1.0
+  stair_push_fall: -3.0
+  stair_push_slip: -0.2
+learning_rates_requested:
+  policy: 0.0001
+  terrain: 0.001
+schedule: fixed

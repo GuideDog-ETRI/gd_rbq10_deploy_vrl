@@ -15,7 +15,7 @@ case "$variant" in
 esac
 # These GAST students were trained with the legacy 2026-08-29 cameras (manifest camera_contract=vendor_legacy),
 # so they replay only on that legacy SDK with GD_LAB_ALLOW_LEGACY_CAMERA=1; run_sim_vrl.sh refuses any other pair.
-export RBQ_DIR="${RBQ_DIR:-/home/user/gd_project/RBQ_vendor/RBQ-nightly}"
+export RBQ_DIR="${RBQ_DIR:-$([ "${GD_LAB_ALLOW_LEGACY_CAMERA:-}" = 1 ] && echo /home/user/gd_project/RBQ_vendor/RBQ-nightly || echo /home/user/gd_project/RBQ_vendor_new/RBQ-nightly)}"  # legacy SDK only with GD_LAB_ALLOW_LEGACY_CAMERA=1
 camera_pair() {
   python3 "$repo/simulation/mujoco/check_camera_calibration.py" pair --rbq-dir "$RBQ_DIR" \
     --policy "$repo/gast/runtime/resources/policy/$RBQ_POLICY_FILE" >/dev/null

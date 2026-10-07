@@ -37,6 +37,7 @@
 namespace Ort {
 class Env;
 class Session;
+struct MemoryInfo;
 }  // namespace Ort
 
 namespace sensor_msgs {
@@ -53,6 +54,7 @@ class Subscriber;
 }
 namespace rbq_msgs { namespace msg { namespace dds_ { class SimInfo_; } } }
 class CvttTerrainScan;
+class GastTerrainMemory;
 
 class VisionStudentThread {
 public:
@@ -123,6 +125,9 @@ private:
     std::vector<std::unique_ptr<rbq_sdk::Subscriber<sensor_msgs::msg::dds_::CompressedImage_>>> m_subs;
     bool m_teacherMode = false;
     std::unique_ptr<CvttTerrainScan> m_teacherScan;
+    void gastStep(const Ort::MemoryInfo& mem, int& tick);
+    bool m_gastMode = false;
+    std::unique_ptr<GastTerrainMemory> m_gastMemory;  // student-loop thread only
     std::unique_ptr<rbq_sdk::Subscriber<rbq_msgs::msg::dds_::SimInfo_>> m_simPoseSub;
     struct TimedPose {
         int64_t stampMs;

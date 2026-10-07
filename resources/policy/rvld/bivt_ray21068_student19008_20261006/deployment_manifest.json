@@ -1,0 +1,166 @@
+{
+  "teacher": "BIVT-Ray Clean gap Top-1",
+  "teacher_iteration": 21068,
+  "teacher_sha256": "fa397d22a949e24f74312b5270b5954a4ddb15c7451ea85ba8f64dbeeb7c9501",
+  "student_iteration": 19008,
+  "student_arch": "cnn_gru",
+  "student_sha256": "e5ede9b6369e9395152fca0a713f6af0f24426ff3a6c2030e10c359f84fe3727",
+  "student_package": "gd_lab_vrl vrl_models 21a3a60 checkpoints/students/rvld/bivt_ray21068_student19008_20261006",
+  "camera_profile": "vendor_new",
+  "onnx_camel_camera_profile": "vendor_new",
+  "camera_contract": {
+    "profile": "vendor_new",
+    "positions": [
+      [
+        0.364,
+        0,
+        -0.024919
+      ],
+      [
+        0.26097,
+        0,
+        -0.04582
+      ],
+      [
+        -0.19515,
+        0.0065,
+        -0.0465
+      ],
+      [
+        -0.352082,
+        -1.1e-05,
+        -0.018938
+      ]
+    ],
+    "quaternions_opengl": [
+      [
+        0,
+        -0.1736482,
+        0,
+        0.9848078
+      ],
+      [
+        0,
+        0.1218693,
+        0,
+        0.9925462
+      ],
+      [
+        0,
+        0,
+        0,
+        1
+      ],
+      [
+        0.9848078,
+        0,
+        0.1736482,
+        0
+      ]
+    ],
+    "sensor_size_m": [
+      0.003896,
+      0.00214
+    ],
+    "focal_m": 0.00193,
+    "width": 80,
+    "height": 45,
+    "source_resolution": [
+      640,
+      360
+    ],
+    "depth_clip": [
+      0.15,
+      5.0
+    ],
+    "period_steps": 8,
+    "policy_dt": 0.01,
+    "render_height": 48,
+    "schema_version": 1,
+    "terrain_observation_version": 2,
+    "camera_names": [
+      "front_depth_camera0",
+      "front_depth_camera1",
+      "hind_depth_camera2",
+      "hind_depth_camera3"
+    ],
+    "channels": [
+      "depth",
+      "ir_proxy"
+    ],
+    "transform": "camera_to_trunk",
+    "camera_convention": "opengl: looks along -z, +y up",
+    "source": "RBQ SDK rbq.xml BT0-3 (v1.19.47, v1.20.0, main, nightly 41f6fac6 2026-09-09, nightly 5974087c 2026-10-04); main commit 68bc33b77719d357b4323fb88549efd905caf721, rbq.xml git blob 68ad7e0ac2d5bf181d3c6b3663310ff582894f8c",
+    "depth_semantics": "optical_axis_metres",
+    "quaternion_order": "wxyz",
+    "fov_degrees": [
+      90.531880673026,
+      58.00833537295417
+    ],
+    "fx": 39.630390143737166,
+    "fy": 40.58411214953271,
+    "cx": 40.0,
+    "cy": 22.5,
+    "frame_shape": [
+      1,
+      4,
+      2,
+      45,
+      80
+    ]
+  },
+  "onnx_inputs": {
+    "policy_vrl": [
+      [
+        "direct_obs",
+        [
+          "batch",
+          46
+        ]
+      ],
+      [
+        "cenet_obs",
+        [
+          "batch",
+          230
+        ]
+      ],
+      [
+        "terrain_latent",
+        [
+          "batch",
+          32
+        ]
+      ]
+    ],
+    "policy_vrl_student": [
+      [
+        "frames",
+        [
+          1,
+          4,
+          2,
+          45,
+          80
+        ]
+      ],
+      [
+        "hidden_in",
+        [
+          1,
+          64
+        ]
+      ]
+    ]
+  },
+  "parity_max_abs_errors": {
+    "policy_vrl": 1.2993812561035156e-05,
+    "policy_vrl_student": 9.834766387939453e-07
+  },
+  "files_sha256": {
+    "policy_vrl.onnx": "6c02064f18b3d77382260bea7274cfa498cd682c46e3a5556a1cf6c96f253064",
+    "policy_vrl_student.onnx": "72169e30d6b45ffdebc475dbc60122287336dab3ed7c594a2ee8417916fbc00d"
+  },
+  "selection": "user-requested iteration 19008; no held-out ranking",
+  "mujoco_walking_validated": false
+}
