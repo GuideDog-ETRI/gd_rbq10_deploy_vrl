@@ -23,14 +23,14 @@ def main():
     source = args.vendor.resolve() / "rbq_simulator/rbq_mujoco"
     output = args.output.resolve()
     repo = Path(__file__).resolve().parents[2]
-    if output != repo / "build/sync_mujoco_source":
-        raise RuntimeError("output must be this repository's build/sync_mujoco_source")
+    if output not in (repo / "build/sync_mujoco_source", repo / "build/sync_gast_source"):
+        raise RuntimeError("output must be this repository's build/sync_mujoco_source or build/sync_gast_source")
     # Start from the given SDK only: files left by another SDK version (e.g. the new SDK's LiDAR
     # sources) would otherwise be compiled against the wrong headers.
     shutil.rmtree(output / "src", ignore_errors=True)
     shutil.copytree(source / "src", output / "src", dirs_exist_ok=True)
-    shutil.copyfile(repo / "simulation/mujoco/sync_mujoco/CMakeLists.txt", output / "CMakeLists.txt")
-    shutil.copyfile(repo / "simulation/mujoco/sync_mujoco/BellyCaptureGroup.hpp", output / "src/BellyCaptureGroup.hpp")
+    shutil.copyfile(repo / "simulation/mujoco/sync/vrl/CMakeLists.txt", output / "CMakeLists.txt")
+    shutil.copyfile(repo / "simulation/mujoco/sync/vrl/BellyCaptureGroup.hpp", output / "src/BellyCaptureGroup.hpp")
     path = output / "src/main.cpp"
     text = path.read_text()
     start = text.index("void CameraThread(mujoco::Simulate* sim, const std::string &cameraName)\n{")

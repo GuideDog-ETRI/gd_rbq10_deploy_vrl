@@ -37,6 +37,7 @@
 namespace Ort {
 class Env;
 class Session;
+struct MemoryInfo;
 }  // namespace Ort
 
 namespace sensor_msgs {
@@ -52,13 +53,15 @@ template <typename T>
 class Subscriber;
 }
 namespace rbq_msgs { namespace msg { namespace dds_ { class SimInfo_; } } }
-class CvttTerrainScan;
+class TerrainScan;
+class GastTerrainMemory;
 
 class VisionStudentThread {
 public:
     static constexpr int kNumCameras = 4;    // BT0-3
     static constexpr int kLatentDim  = 32;
-    static constexpr int kHiddenDim  = 64;
+    static constexpr int kHiddenDim  = 64;      // RVLD / GAVD recurrent state
+    static constexpr int kGastHiddenDim = 6116; // GAST student grid memory
     // 2026-09-19: 80x60(4:3) -> 80x45(16:9). 4:3는 근거 없이 고른 값이었고,
     // 실제 D430/Mujoco가 스트리밍하는 640x360도 16:9라서 종횡비가 안 맞았다
     // (아래에서 크기 다르면 리사이즈하는데, 종횡비가 다르면 리사이즈가 화면을
@@ -121,7 +124,12 @@ private:
     int64_t m_inputStampMs = 0;  // oldest source time expressed in monotonic clock
     std::vector<std::unique_ptr<rbq_sdk::Subscriber<sensor_msgs::msg::dds_::CompressedImage_>>> m_subs;
     bool m_teacherMode = false;
-    std::unique_ptr<CvttTerrainScan> m_teacherScan;
+    std::unique_ptr<TerrainScan> m_teacherScan;
+    bool m_gastMode = false;     // GAST teacher oracle (full grid + memory)
+    bool m_gastStudent = false;  // GAST student (capture-pose contract)
+    std::unique_ptr<GastTerrainMemory> m_gastMemory;  // student-loop thread only
+    std::array<float, 7> m_capturePose{};
+    void gastStep(const Ort::MemoryInfo& mem, int& tick);
     std::unique_ptr<rbq_sdk::Subscriber<rbq_msgs::msg::dds_::SimInfo_>> m_simPoseSub;
     struct TimedPose {
         int64_t stampMs;
@@ -148,7 +156,7 @@ private:
     int64_t m_latentStampMs = 0;
 
     // student 루프 스레드 전용 -- 락 불필요.
-    std::array<float, kHiddenDim> m_hidden{};
+    std::vector<float> m_hidden;  // sized from the model: kHiddenDim or kGastHiddenDim
     bool m_bavrlVision = false;
     std::array<uint64_t, kNumCameras> m_consumedDepth{}, m_consumedIr{};
 };

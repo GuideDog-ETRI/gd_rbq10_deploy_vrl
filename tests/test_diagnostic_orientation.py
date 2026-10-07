@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class DiagnosticOrientation(unittest.TestCase):
     def test_shared_viewer(self):
-        launcher = (ROOT / 'scripts/run_sim_vrl.sh').read_text()
+        launcher = (ROOT / 'scripts/common/run_sim_vrl.sh').read_text()
         self.assertIn('/tools/vision-viewer', launcher)
         cmake = (ROOT / 'tools/CMakeLists.txt').read_text()
         self.assertIn('add_executable(vision-viewer src/student_input_viewer.cpp)', cmake)

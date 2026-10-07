@@ -1,8 +1,6 @@
 #include "PolicyBackend.hpp"
 
 #include "PolicyBackendVrl.hpp"  // DreamVrl — vision-RL 3-input 확장, 이 파일과 완전히 분리된 새 파일
-#include "BavrlBackend.hpp"
-#include "DwbBackend.hpp"
 #include "PolicyRuntime.hpp"
 
 #include <QJsonArray>
@@ -443,20 +441,11 @@ std::unique_ptr<PolicyBackend> PolicyBackend::create(const std::string& path, fl
         // 새 모드가 필요 없다. 개수만 보려고 세션을 한 번 더 여는 게 두 배
         // 로드라 약간 낭비지만, 기동 시 한 번뿐이다.
         size_t inputCount = 0;
-        bool isBavrl = false;
         {
             Ort::Env probeEnv(ORT_LOGGING_LEVEL_WARNING, "camel_rlwalk_probe");
             Ort::SessionOptions probeOpts;
             Ort::Session probeSession(probeEnv, model.c_str(), probeOpts);
             inputCount = probeSession.GetInputCount();
-            Ort::AllocatorWithDefaultOptions allocator;
-            auto tag = probeSession.GetModelMetadata().LookupCustomMetadataMapAllocated("camel.bavrl", allocator);
-            isBavrl = tag && std::string(tag.get()) == "v1_sim_only";
-        }
-        if (isBavrl) {
-            auto backend = std::make_unique<BavrlBackend>();
-            if (!backend->load(model, payloadKg)) return nullptr;
-            return backend;
         }
         if (inputCount == 3) {
             auto backend = std::make_unique<DreamVrlBackend>();
@@ -464,7 +453,11 @@ std::unique_ptr<PolicyBackend> PolicyBackend::create(const std::string& path, fl
             return backend;
         }
 
-        return makeDwbBackend(model, payloadKg);
+        // Blind DWB policies (2-input) and BAVRL live in gd_rbq10_deploy / archive/; this
+        // deployment runs vision policies only and never falls back to walking blind.
+        FILE_LOG_AS(logERROR, "RLWALK") << "not a vision (3-input DreamVrl) policy: " << model
+            << " -- blind policies run from gd_rbq10_deploy";
+        return nullptr;
     } catch (const Ort::Exception& e) {
         FILE_LOG_AS(logERROR, "RLWALK") << "ONNX load failed: " << e.what();
         return nullptr;

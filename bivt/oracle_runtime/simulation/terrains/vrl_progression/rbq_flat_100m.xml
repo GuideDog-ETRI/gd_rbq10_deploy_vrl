@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<mujoco model="rbq vrl flat 100m course">
-  <include file="rbq_payload.xml"/>
-  <include file="flat_100m.xml"/>
-</mujoco>

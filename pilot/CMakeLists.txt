@@ -20,8 +20,6 @@ add_executable(CAMEL-Pilot
     src/PolicyBackend.cpp
     ${CMAKE_SOURCE_DIR}/perception/common/PolicyBackendVrl.hpp
     ${CMAKE_SOURCE_DIR}/perception/common/PolicyBackendVrl.cpp
-    ${CMAKE_SOURCE_DIR}/bavrl/src/BavrlBackend.cpp
-    ${CMAKE_SOURCE_DIR}/dwb/src/DwbBackend.cpp
     ${CMAKE_SOURCE_DIR}/perception/common/VisionStudentThread.hpp
     ${CMAKE_SOURCE_DIR}/perception/common/VisionStudentThread.cpp
     src/PolicyRuntime.hpp
@@ -70,6 +68,5 @@ target_compile_definitions(CAMEL-Pilot-arm2-gain-test PRIVATE
 
 include_directories(${CMAKE_SOURCE_DIR}/perception/common)
 
-include_directories(${CMAKE_SOURCE_DIR}/bavrl/src ${CMAKE_SOURCE_DIR}/pilot/src)
+include_directories(${CMAKE_SOURCE_DIR}/pilot/src)
 
-include_directories(${CMAKE_SOURCE_DIR}/dwb/src)
