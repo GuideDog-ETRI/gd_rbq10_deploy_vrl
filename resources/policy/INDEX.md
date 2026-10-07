@@ -7,6 +7,7 @@
 | `bivt/ray21068_oracle` | BIVT-Ray 교사 (policy + encoder) | Clean run Top-1 21068, SHA `fa397d22…` | GAST v2.1 출발점 |
 | `bivt/ray_clean31625_oracle` | BIVT-Ray 교사 | Clean run Top-1 31625 | |
 | `bivt/ray_v2_32953_oracle`, `bivt/ray_v2_34773_oracle` | BIVT-Ray 교사 | v2 검증 학습 Top (31625에서) | 중단된 가지 |
+| `gast/gast_v21_2000_oracle` | GAST 교사 (policy + gast_encoder) | v2.1 업데이트 2000 (21068 웜스타트), SHA `db500e96…` | 2026-10-07 평가: 갭 17/18, 계단 외력 생존. 오늘밤 GAST 학생의 교사 |
 | `gast/gast_v21_smoke11_oracle` | GAST 교사 (policy + gast_encoder) | v2.1 smoke 11 업데이트 | 실행 경로 확인용 |
 | `gast/bivt_ray21068_student19840_20261006` | GAST 학생 | 교사 21068 | |
 | `gast/bivt_ray21068_student19840_gapfocus24960_20261006` | GAST 학생 | 교사 21068, 갭 집중 파인튜닝 | 21040·29840은 삭제 (전체 백업에 있음) |
