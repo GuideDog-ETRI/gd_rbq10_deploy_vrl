@@ -477,18 +477,18 @@ case "${1:-}" in
                     done
                 fi
 
-                RESIZE_BIN="${SCRIPT_DIR}/tools/resize_win"
-                [ -x "${RESIZE_BIN}" ] || gcc -o "${RESIZE_BIN}" "${SCRIPT_DIR}/tools/resize_win.c" -lX11 2>/dev/null || true
-                if [ -x "${RESIZE_BIN}" ]; then
+                # Window layout (user request 2026-10-08, all simulators): Mujoco's Xephyr window at the top
+                # left, shrunk to exactly what Mujoco rendered (no black border), and the student input viewer
+                # (vision-viewer, "Terrain diagnostic ...") right next to it at the same height.
+                PLACE_BIN="${SCRIPT_DIR}/tools/place_win"
+                [ -x "${PLACE_BIN}" ] || gcc -O2 -o "${PLACE_BIN}" "${SCRIPT_DIR}/tools/place_win.c" -lX11 2>/dev/null || true
+                if [ -x "${PLACE_BIN}" ]; then
                     (
-                        # Wait for Mujoco's window on the Xephyr display, read its
-                        # real size, find Xephyr's own (outer, real-DISPLAY) window
-                        # by title, shrink it to match. Backgrounded: cmd_exec_app
-                        # below blocks in the foreground for as long as Mujoco runs.
+                        # Backgrounded: cmd_exec_app below blocks in the foreground for as long as Mujoco runs.
                         mujoco_geom=""
                         for _i in $(seq 1 40); do
                             mujoco_geom="$(DISPLAY="${MUJOCO_XDISPLAY}" xwininfo -root -tree 2>/dev/null \
-                                | sed -n 's/.*"MuJoCo : rbq environment".*[[:space:]]\([0-9]\+\)x\([0-9]\+\)+0+0.*/\1 \2/p' | head -1)"
+                                | sed -n 's/.*"MuJoCo : [^"]*".*[[:space:]]\([0-9]\+\)x\([0-9]\+\)+0+0.*/\1 \2/p' | head -1)"
                             [ -n "${mujoco_geom}" ] && break
                             sleep 0.5
                         done
@@ -497,8 +497,39 @@ case "${1:-}" in
                         xephyr_win="$(DISPLAY="${DISPLAY}" xwininfo -root -tree 2>/dev/null \
                             | grep -F "(\"Xephyr\" \"Xephyr\")" | grep -oE '0x[0-9a-f]+' | head -1)"
                         [ -n "${xephyr_win}" ] || exit 0
-                        "${RESIZE_BIN}" "${DISPLAY}" "${xephyr_win}" "${_w}" "${_h}"
-                        echo "[rbq_sim] fit Xephyr window to Mujoco's ${_w}x${_h} (no border)"
+                        # Place a client window so its content lands at (x, y); the window manager may
+                        # offset a request (dock, top bar, decorations), so read back and correct twice.
+                        place_at() {
+                            local win=$1 x=$2 y=$3 w=$4 h=$5 rx=$2 ry=$3 ax ay k
+                            for k in 1 2 3; do
+                                "${PLACE_BIN}" "${DISPLAY}" "${win}" "${rx}" "${ry}" "${w}" "${h}"
+                                sleep 0.5
+                                read -r ax ay <<< "$(DISPLAY="${DISPLAY}" xwininfo -id "${win}" 2>/dev/null \
+                                    | awk '/Absolute upper-left X/{x=$4} /Absolute upper-left Y/{y=$4} END{print x, y}')"
+                                [ -z "${ax}" ] && return 1
+                                [ "${ax}" = "${x}" ] && [ "${ay}" = "${y}" ] && return 0
+                                rx=$(( rx + x - ax )); ry=$(( ry + y - ay ))
+                            done
+                        }
+                        # Top left as far as the desktop allows, then use where it actually landed.
+                        "${PLACE_BIN}" "${DISPLAY}" "${xephyr_win}" 0 0 "${_w}" "${_h}"
+                        sleep 0.5
+                        read -r mx my <<< "$(DISPLAY="${DISPLAY}" xwininfo -id "${xephyr_win}" 2>/dev/null \
+                            | awk '/Absolute upper-left X/{x=$4} /Absolute upper-left Y/{y=$4} END{print x, y}')"
+                        echo "[rbq_sim] Mujoco window ${_w}x${_h} at ${mx},${my} (no border)"
+                        # The viewer opens a few seconds after Mujoco; keep its 720:791 canvas ratio, same height.
+                        # Take the client window, not the window manager's frame (mutter-x11-frames).
+                        for _i in $(seq 1 60); do
+                            viewer_win="$(DISPLAY="${DISPLAY}" xwininfo -root -tree 2>/dev/null \
+                                | grep -F '"Terrain diagnostic' | grep -v 'mutter-x11-frames' | grep -oE '0x[0-9a-f]+' | head -1)"
+                            if [ -n "${viewer_win}" ] && [ -n "${mx}" ]; then
+                                sleep 1  # let OpenCV finish its own initial resize first
+                                place_at "${viewer_win}" $(( mx + _w )) "${my}" $(( _h * 720 / 791 )) "${_h}"
+                                echo "[rbq_sim] student input viewer right of Mujoco, height ${_h}"
+                                break
+                            fi
+                            sleep 1
+                        done
                     ) &
                 fi
 

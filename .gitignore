@@ -11,3 +11,4 @@ logs/
 simulation/terrains/**/rbq_payload.xml
 __pycache__/
 records/
+simulation/mujoco/tools/place_win
