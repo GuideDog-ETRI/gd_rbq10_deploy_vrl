@@ -1,0 +1,232 @@
+{
+  "status": "offline_parity_passed_NOT_smoke_tested",
+  "model_bundle": "/home/user/gd_project/archive/codex_worktrees/update19_b/.tmp/bundles/gastv21_student42624_b1copy_s7_20261009",
+  "synthetic_smoke_only_NOT_TRAINED": false,
+  "student_iteration": 42624,
+  "student_arch": "gast_spatiotemporal_v1",
+  "student_checkpoint_sha256": "9aae59465fb895f983e68a60b2e7ad37f146c90471c7945f59ad056a0bc85d47",
+  "teacher_checkpoint": "/home/user/gd_project/archive/gd_lab_vrl_worktrees/p3_headonly_20261009/checkpoints/teachers/gast/gast_v21_2000_20261007/teacher/model_2000.pt",
+  "teacher_sha256": "db500e96ddf2325d415ac960417d2e34417ded87d804f630ae165675eaba24b4",
+  "student_config": {
+    "camera_profile": "vendor_new"
+  },
+  "gast_contract": {
+    "external_gap_signal": false,
+    "pose": "xy_yaw_wxyz",
+    "hidden_dim": 6116
+  },
+  "camera_contract": {
+    "profile": "vendor_new",
+    "positions": [
+      [
+        0.364,
+        0,
+        -0.024919
+      ],
+      [
+        0.26097,
+        0,
+        -0.04582
+      ],
+      [
+        -0.19515,
+        0.0065,
+        -0.0465
+      ],
+      [
+        -0.352082,
+        -1.1e-05,
+        -0.018938
+      ]
+    ],
+    "quaternions_opengl": [
+      [
+        0,
+        -0.1736482,
+        0,
+        0.9848078
+      ],
+      [
+        0,
+        0.1218693,
+        0,
+        0.9925462
+      ],
+      [
+        0,
+        0,
+        0,
+        1
+      ],
+      [
+        0.9848078,
+        0,
+        0.1736482,
+        0
+      ]
+    ],
+    "sensor_size_m": [
+      0.003896,
+      0.00214
+    ],
+    "focal_m": 0.00193,
+    "width": 80,
+    "height": 45,
+    "source_resolution": [
+      640,
+      360
+    ],
+    "depth_clip": [
+      0.15,
+      5.0
+    ],
+    "period_steps": 8,
+    "policy_dt": 0.01,
+    "render_height": 48,
+    "schema_version": 1,
+    "terrain_observation_version": 2,
+    "camera_names": [
+      "front_depth_camera0",
+      "front_depth_camera1",
+      "hind_depth_camera2",
+      "hind_depth_camera3"
+    ],
+    "channels": [
+      "depth",
+      "ir_proxy"
+    ],
+    "transform": "camera_to_trunk",
+    "camera_convention": "opengl: looks along -z, +y up",
+    "source": "RBQ SDK rbq.xml BT0-3 (v1.19.47, v1.20.0, main, nightly 41f6fac6 2026-09-09, nightly 5974087c 2026-10-04); main commit 68bc33b77719d357b4323fb88549efd905caf721, rbq.xml git blob 68ad7e0ac2d5bf181d3c6b3663310ff582894f8c",
+    "depth_semantics": "optical_axis_metres",
+    "quaternion_order": "wxyz",
+    "fov_degrees": [
+      90.531880673026,
+      58.00833537295417
+    ],
+    "fx": 39.630390143737166,
+    "fy": 40.58411214953271,
+    "cx": 40.0,
+    "cy": 22.5,
+    "frame_shape": [
+      1,
+      4,
+      2,
+      45,
+      80
+    ]
+  },
+  "student_recurrent_parity": [
+    {
+      "case": "normal",
+      "max_abs_error": 1.3113021850585938e-06
+    },
+    {
+      "case": "move",
+      "max_abs_error": 1.1473894119262695e-06
+    },
+    {
+      "case": "rotate",
+      "max_abs_error": 1.4603137969970703e-06
+    },
+    {
+      "case": "missing",
+      "max_abs_error": 1.2516975402832031e-06
+    },
+    {
+      "case": "stale",
+      "max_abs_error": 1.1101365089416504e-06
+    },
+    {
+      "case": "old",
+      "max_abs_error": 1.2814998626708984e-06
+    },
+    {
+      "case": "reset",
+      "max_abs_error": 1.0132789611816406e-06
+    },
+    {
+      "case": "normal",
+      "max_abs_error": 1.4901161193847656e-06
+    },
+    {
+      "case": "move",
+      "max_abs_error": 1.1324882507324219e-06
+    },
+    {
+      "case": "rotate",
+      "max_abs_error": 1.2218952178955078e-06
+    },
+    {
+      "case": "missing",
+      "max_abs_error": 1.8477439880371094e-06
+    },
+    {
+      "case": "stale",
+      "max_abs_error": 1.601874828338623e-06
+    },
+    {
+      "case": "old",
+      "max_abs_error": 1.3560056686401367e-06
+    },
+    {
+      "case": "reset",
+      "max_abs_error": 1.430511474609375e-06
+    },
+    {
+      "case": "normal",
+      "max_abs_error": 1.430511474609375e-06
+    },
+    {
+      "case": "move",
+      "max_abs_error": 1.430511474609375e-06
+    },
+    {
+      "case": "rotate",
+      "max_abs_error": 1.430511474609375e-06
+    },
+    {
+      "case": "missing",
+      "max_abs_error": 1.4007091522216797e-06
+    },
+    {
+      "case": "stale",
+      "max_abs_error": 1.5497207641601562e-06
+    },
+    {
+      "case": "old",
+      "max_abs_error": 2.205371856689453e-06
+    },
+    {
+      "case": "reset",
+      "max_abs_error": 1.1175870895385742e-06
+    }
+  ],
+  "student_max_abs_error": 2.205371856689453e-06,
+  "actor_cenet_exact_teacher_weights": false,
+  "cenet_exact_teacher_weights": true,
+  "action_distillation": {
+    "action_target": "current",
+    "student_policy": "copy",
+    "gate_target": "gated",
+    "action_loss_weight": 1.0,
+    "latent_loss_weight": 1.0
+  },
+  "runtime_contract": "legacy_3input",
+  "deploy_ready_without_runtime_changes": true,
+  "actor_max_abs_error": 1.0967254638671875e-05,
+  "deployment_hashes": {
+    "policy_vrl.onnx": "6c55fcbfa161405bf7f72a2475ce9a99d0f8ef7c2f3cb5ab6d1d38940b026da2",
+    "policy_vrl_student.onnx": "79716f132329d0e01afe501671ba85904c9017f0d7373e8a8f54c916b80e5b28",
+    "student_gast.onnx": "79716f132329d0e01afe501671ba85904c9017f0d7373e8a8f54c916b80e5b28",
+    "policy_vrl.pt": "ef676acaece6cb97a33f2a56878d6832ab830cfd88289c656f9a1c04c032ff5b",
+    "student_checkpoint.pt": "9aae59465fb895f983e68a60b2e7ad37f146c90471c7945f59ad056a0bc85d47",
+    "teacher_checkpoint.pt": "db500e96ddf2325d415ac960417d2e34417ded87d804f630ae165675eaba24b4"
+  },
+  "limitations": [
+    "Offline ONNX parity only; no MuJoCo rollout was run by this exporter.",
+    "Loopback simulation only; no physical robot or external NIC validation.",
+    "IR is the simulator's RGB-luminance proxy, not physical IR sensor simulation.",
+    "Top-5 and S_online are training-rollout proxies, not held-out gap/stair validation."
+  ]
+}

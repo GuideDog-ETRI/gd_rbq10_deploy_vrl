@@ -1,0 +1,25 @@
+{
+  "onnx": "student_decoder.onnx",
+  "input": "hidden_out of student_gast.onnx [1,6116]",
+  "output": "decoded[1,187,6]",
+  "channels": [
+    "height_m",
+    "teacher_visible",
+    "gap",
+    "step_up",
+    "step_down",
+    "support"
+  ],
+  "grid": {
+    "rows": 11,
+    "cols": 17,
+    "row_axis": "y lateral, -0.5..+0.5 m",
+    "col_axis": "x forward, -0.8..+0.8 m",
+    "frame": "yaw-aligned body"
+  },
+  "height_note": "scanner_z - ground_z - 0.5 m; flat ground under the robot reads about 0",
+  "source_checkpoint": "/home/user/gd_project/gd_rbq10_deploy_vrl/records/checkpoints/gastv21_2000_student/student_top5_iter_07456.pt",
+  "student_iteration": 7456,
+  "teacher_sha256": "db500e96ddf2325d415ac960417d2e34417ded87d804f630ae165675eaba24b4",
+  "parity_max_abs_error": 1.7881393432617188e-07
+}
