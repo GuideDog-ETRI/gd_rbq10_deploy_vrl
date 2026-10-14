@@ -10,13 +10,16 @@ RBQ10 비전 보행 정책(교사 oracle과 카메라 학생)을 MuJoCo와 실�
 ```bash
 cmake -B build -S . -DCMAKE_BUILD_TYPE=Release           # 처음 한 번 (이후 빌드는 실행기가 한다)
 
-bash scripts/gast/student/bivt_ray21068_student19840/run_sim.sh          # 기본 코스
-bash scripts/gast/student/bivt_ray21068_student19840/run_sim.sh gap      # 코스 지정
-bash scripts/gast/student/bivt_ray21068_student19840/run_sim.sh --check  # 정적 검사만
-bash scripts/gast/student/bivt_ray21068_student19840/run_sim.sh stop
+# 공개 묶음은 GAST v2.1 교사 oracle 두 개다 (resources/policy/INDEX.md): 26123 (다중 GPU Top-1), 2000.
+bash scripts/gast/teacher/gast_v21_mg26123_top1/run_sim.sh            # 기본 코스 (gap)
+bash scripts/gast/teacher/gast_v21_mg26123_top1/run_sim.sh force4     # 코스 지정
+bash scripts/gast/teacher/gast_v21_mg26123_top1/run_sim.sh --check    # 정적 검사만
+bash scripts/gast/teacher/gast_v21_mg26123_top1/run_sim.sh stop
+bash scripts/gast/teacher/gast_v21_2000/run_sim.sh stairs20           # 교사 2000
 
-bash scripts/gast/teacher/run_sim.sh gast_v21_smoke11_oracle stairs20   # GAST 교사 oracle (묶음 이름을 인자로)
-bash scripts/push.sh pull 200 0.6                                        # 계단 손잡이 당김 (MujocoGastSync)
+RBQ_SIM_OBS_NOISE=1 RBQ_PAYLOAD_KG=0 bash scripts/gast/teacher/gast_v21_mg26123_top1/run_sim.sh force4  # 센서 노이즈, 탑재물 없음
+bash scripts/push.sh pull 200 0.6                                      # 계단 손잡이 당김 (MujocoGastSync)
+bash evaluation/force4.sh                                              # 20 cm 계단 외력 4종 시나리오 + 영상 (조건은 파일 머리말)
 ```
 
 | 코스 | 지형 폴더 | 내용 |
@@ -24,6 +27,10 @@ bash scripts/push.sh pull 200 0.6                                        # 계�
 | `gap` | `simulation/terrains/gap_pit65` | 갭 5/10/15/20/25 cm, 바닥 0.65 m (Isaac `platform_gap`과 같음) |
 | `gap150` | `simulation/terrains/vrl_progression` | 같은 갭, 바닥 1.5 m (10/07 이전 결과의 기준) |
 | `stairs` / `stairs20` | `stairs_push` / `stairs_push_20cm` | 15 / 20 cm × 10단 계단 외력 코스 |
+| `course` | `gd_course` | 벤더 혼합 코스 (마찰 매트, 피라미드, 계단, 경사로, 산악 hfield, 갭 4개). 정답 지도는 `height_raster.bin` |
+| `stairs20gap` | `stairs20_gap` | `stairs20` + 갭 10/15/20/25 cm |
+| `gapstairs` / `gapstairs15` | `gap_stairs20_25` / `gap_stairs20_25_15steps` | 평지 2 m, 갭 5~30 cm, 20 cm 계단, 평지 2 m, 25 cm 계단 (10 / 15단) |
+| `force4` | `gap_stairs_force4` | 갭 5~30 cm, 평지 4 m, 20 cm 계단 20단(외력 4종), 25 cm 계단 10단 (`simulation/mujoco/make_course_gap_stairs.py`) |
 
 시뮬레이터는 한 번에 하나만 돈다. 실행기는 `logs/owned-launch`에 소유 묶음을 적고, 다른 묶음의 실행을 멈추거나 덮어쓰지 않는다.
 
@@ -32,9 +39,9 @@ bash scripts/push.sh pull 200 0.6                                        # 계�
 `evaluation/`이 같은 조건의 반복 평가를 한다. 결과는 git 밖의 `records/<이름>/<날짜>/`에 쌓인다.
 
 ```bash
-bash evaluation/eval_candidate.sh bivt_ray21068 3 scripts/bivt/ray21068_oracle/run_sim.sh
-#   갭 코스 vx 0.6/1.0/1.2 × N회 + 20 cm 계단 외력 5종 → records/bivt_ray21068/<날짜>/summary.txt
-GD_LAB_TRAIN_ROOT=<gd_lab_vrl>/gast bash evaluation/milestone_eval.sh 5000
+bash evaluation/eval_candidate.sh gast_v21_26123 3 scripts/gast/teacher/gast_v21_mg26123_top1/run_sim.sh
+#   갭 코스 vx 0.6/1.0/1.2 × N회 + 20 cm 계단 외력 5종 → records/gast_v21_26123/<날짜>/summary.txt
+GD_LAB_TRAIN_ROOT=<gd_lab_vrl> bash evaluation/milestone_eval.sh 5000
 #   서버 GAST 학습이 5,000 업데이트에 도달하면 Top-1을 받아 oracle 묶음으로 내보내고 평가
 ```
 

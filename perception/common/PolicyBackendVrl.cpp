@@ -1,3 +1,4 @@
+#include "SimObsNoise.hpp"
 #include "PolicyBackendVrl.hpp"
 
 #include <algorithm>
@@ -201,14 +202,23 @@ struct DreamVrlBackend::Impl {
         for (int i = 0; i < 12; ++i) pos[i] -= kOffsetOnnx[i];
 
         const Eigen::Vector3d grav = projectedGravity(snap);
+        // Simulation-only training-contract sensor noise (RBQ_SIM_OBS_NOISE=1, SimObsNoise.hpp), raw units before scale.
+        auto& noise = SimObsNoise::instance();
+        float gyro[3] = {static_cast<float>(snap.gyro[0]), static_cast<float>(snap.gyro[1]), static_cast<float>(snap.gyro[2])};
+        float g[3] = {static_cast<float>(grav.x()), static_cast<float>(grav.y()), static_cast<float>(grav.z())};
+        if (noise.enabled()) {
+            for (float& v : gyro) v += noise.uniform(.2f);
+            for (float& v : g) v += noise.uniform(.05f);
+            for (int i = 0; i < 12; ++i) { pos[i] += noise.uniform(.01f); vel[i] += kVelScale * noise.uniform(1.5f); }
+        }
 
         int off = 0;
-        step[off++] = kAngScale * static_cast<float>(snap.gyro[0]);
-        step[off++] = kAngScale * static_cast<float>(snap.gyro[1]);
-        step[off++] = kAngScale * static_cast<float>(snap.gyro[2]);
-        step[off++] = static_cast<float>(grav.x());
-        step[off++] = static_cast<float>(grav.y());
-        step[off++] = static_cast<float>(grav.z());
+        step[off++] = kAngScale * gyro[0];
+        step[off++] = kAngScale * gyro[1];
+        step[off++] = kAngScale * gyro[2];
+        step[off++] = g[0];
+        step[off++] = g[1];
+        step[off++] = g[2];
         step[off++] = kCmdScale[0] * cmd[0];
         step[off++] = kCmdScale[1] * cmd[1];
         step[off++] = kCmdScale[2] * cmd[2];

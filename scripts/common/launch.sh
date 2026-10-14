@@ -7,7 +7,10 @@
 #   BUNDLE_CHECK    optional command run by --check and before every launch
 #
 #   run_sim.sh [course]   start on a course: gap (gap_pit65, 0.65 m pits) | gap150 (vrl_progression,
-#                         1.5 m pits) | stairs (15 cm) | stairs20 (20 cm) | any simulation/terrains/<dir>
+#                         1.5 m pits) | stairs (15 cm) | stairs20 (20 cm) | stairs20gap (20 cm stairs + 10-25 cm gaps) |
+#                         gapstairs (gaps 5-30 cm, 20 cm stairs, 25 cm stairs) | gapstairs15 (same, 15-step flights) |
+#                         force4 (gaps 5-30 cm, 4 m run-up, 20 cm stairs 20 steps, 25 cm stairs 10 steps) | course (gd_course:
+#                         vendor mixed course: friction, pyramid, stairs, ramp, mountain, 4 gaps) | any simulation/terrains/<dir>
 #   run_sim.sh --check    static checks only (bundle files, camera pair, policy-check)
 #   run_sim.sh stop       stop this bundle's launch (refuses to stop another bundle's)
 set -euo pipefail
@@ -20,7 +23,10 @@ export RBQ_DIR="${RBQ_DIR:-$HOME/gd_project/RBQ_vendor_new/RBQ-nightly}"
 export SIM_CONTAINER="${SIM_CONTAINER:-rbq-sim-vrl}"
 export RBQ_POLICY_FILE="$BUNDLE/policy_vrl.onnx"
 export RBQ_SIM_SYNC_APP="$SYNC_APP"
-export RBQ_SIM_VISION=1 RBQ_SIM_SYNC_VISION=1 RBQ_PAYLOAD_KG=6 RBQ_WALK=ours RBQ_HEALTH=1
+# RBQ_PAYLOAD_KG: payload mass in the sim AND the policy's payload input (default 6; 0 = no payload).
+# RBQ_SIM_OBS_NOISE=1: training-contract sensor noise on proprio + GAST terrain (perception/common/SimObsNoise.hpp).
+export RBQ_SIM_VISION=1 RBQ_SIM_SYNC_VISION=1 RBQ_PAYLOAD_KG="${RBQ_PAYLOAD_KG:-6}" RBQ_WALK=ours RBQ_HEALTH=1
+export RBQ_SIM_OBS_NOISE="${RBQ_SIM_OBS_NOISE:-0}"
 export RBQ_VRL_HISTORY_INIT=repeat_first
 export RBQ_VISION_TOPICS="${RBQ_VISION_TOPICS:-$repo/configs/vision_topics.conf}"  # camera topic names
 export RBQ_VRL_PILOT_LOG="$repo/logs/pilot.log"
@@ -37,6 +43,11 @@ course_dir() {
     gap150) echo vrl_progression ;;
     stairs) echo stairs_push ;;
     stairs20) echo stairs_push_20cm ;;
+    course) echo gd_course ;;
+    stairs20gap) echo stairs20_gap ;;
+    gapstairs) echo gap_stairs20_25 ;;
+    gapstairs15) echo gap_stairs20_25_15steps ;;
+    force4) echo gap_stairs_force4 ;;
     *) echo "$1" ;;
   esac
 }

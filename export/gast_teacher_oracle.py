@@ -23,7 +23,7 @@ from tensordict import TensorDict
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
-TRAIN = Path(os.environ.get("GD_LAB_TRAIN_ROOT", REPO.parent / "gd_lab_vrl/gast")).resolve()
+TRAIN = Path(os.environ.get("GD_LAB_TRAIN_ROOT", REPO.parent / "gd_lab_vrl")).resolve()
 ap = argparse.ArgumentParser()
 ap.add_argument("--checkpoint", required=True)
 ap.add_argument("--sha256", required=True)

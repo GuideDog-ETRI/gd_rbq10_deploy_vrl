@@ -2,6 +2,7 @@
 #include "BavrlCameraContract.hpp"
 #include "CameraProfile.hpp"
 #include "../oracle/GastTerrainMemory.hpp"
+#include "SimObsNoise.hpp"
 #include "StudentAgeContract.hpp"
 #include "../oracle/TerrainScan.hpp"
 #include "VisionTopics.hpp"
@@ -510,6 +511,7 @@ void VisionStudentThread::studentLoop(int updatePeriodMs) {
         if (m_resetRequested.exchange(false, std::memory_order_acq_rel)) {
             std::fill(m_hidden.begin(), m_hidden.end(), 0.f);
             if (m_gastMemory) m_gastMemory->reset();
+            if (SimObsNoise::instance().enabled()) SimObsNoise::instance().resetTerrain();
         }
 
         if (m_gastMode) {
@@ -755,14 +757,17 @@ void VisionStudentThread::gastStep(const Ort::MemoryInfo& mem, int& tick) {
         !std::all_of(latest.pos.begin(), latest.pos.end(), [](float v){ return std::isfinite(v); }) ||
         !std::all_of(latest.quat.begin(), latest.quat.end(), [](float v){ return std::isfinite(v); })) return;
     try {
-        const auto scan = m_teacherScan->observeFull({latest.pos, latest.quat});
+        auto scan = m_teacherScan->observeFull({latest.pos, latest.quat});
+        // Simulation-only training-contract terrain noise (RBQ_SIM_OBS_NOISE=1, SimObsNoise.hpp).
+        if (SimObsNoise::instance().enabled()) SimObsNoise::instance().corruptTerrain(scan);
         const auto& q = latest.quat;  // wxyz
         const float yaw = std::atan2(2 * (q[0]*q[3] + q[1]*q[2]), 1 - 2 * (q[2]*q[2] + q[3]*q[3]));
         auto in = m_gastMemory->step(latest.stampMs, scan, {latest.pos[0], latest.pos[1], yaw});
         const int valid = std::count(scan.begin() + TerrainScan::kPoints, scan.end(), 1.f);
         if (tick++ % 200 == 0)
             FILE_LOG_AS(logINFO, "RLWALK") << "GAST teacher scan valid=" << valid << "/187 memory="
-                << m_gastMemory->size() << " oldest_age=" << in.ages[0] << " pose_age_ms=" << now - latest.stampMs;
+                << m_gastMemory->size() << " oldest_age=" << in.ages[0] << " pose_age_ms=" << now - latest.stampMs
+                << " sim_obs_noise=" << SimObsNoise::instance().enabled() << " blackout_steps=" << SimObsNoise::instance().blackoutSteps();
         const std::array<int64_t, 3> framesShape{1, GastTerrainMemory::kInputs, GastTerrainMemory::kScan};
         const std::array<int64_t, 3> posesShape{1, GastTerrainMemory::kInputs, 3};
         const std::array<int64_t, 2> poseShape{1, 3}, agesShape{1, GastTerrainMemory::kInputs};

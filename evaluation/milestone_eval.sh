@@ -27,6 +27,6 @@ for f in agent.yaml env.yaml; do scp -q -P 20022 bsseo@10.77.32.231:$RD/params/$
 sha=$(sha256sum "$CK/$top" | cut -d' ' -f1); n=$T
 echo "reached=$it top1=$top sha256=$sha"
 python3 -c "import json;d=json.load(open('$CK/leaderboard.json'));print('leaderboard',[(e['iteration'],round(e['score'],4)) for e in d['entries']])"
-GD_LAB_TRAIN_ROOT="${GD_LAB_TRAIN_ROOT:?set GD_LAB_TRAIN_ROOT to gd_lab_vrl/gast with the GAST teacher code}" \
+GD_LAB_TRAIN_ROOT="${GD_LAB_TRAIN_ROOT:?set GD_LAB_TRAIN_ROOT to the gd_lab_vrl checkout (GAST teacher code)}" \
   $PY_ISAAC "$REPO/export/gast_teacher_oracle.py" --checkpoint "$CK/$top" --sha256 "$sha" --name "gast_v21_${n}_oracle" --params "$CK/params" 2>&1 | grep -E '"parity_max_abs_error"|Error|assert'
 bash "$EVAL_DIR/eval_candidate.sh" "gast_v21_${n}" 6 "$REPO/scripts/gast/teacher/run_sim.sh" "gast_v21_${n}_oracle"

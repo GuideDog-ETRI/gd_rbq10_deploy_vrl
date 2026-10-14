@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <fstream>
 #include <iterator>
 #include <regex>
@@ -45,10 +46,16 @@ public:
                 throw std::runtime_error("CVTT terrain box has nonpositive size");
             m_boxes.push_back(box);
         }
+        // Optional baked surface next to the XML (simulation/mujoco/make_height_raster.py) for
+        // courses with rotated boxes or an hfield (gd_course). It replaces the box lookup.
+        const auto slash = xmlPath.find_last_of('/');
+        loadRaster((slash == std::string::npos ? std::string(".") : xmlPath.substr(0, slash)) + "/height_raster.bin");
         // Any axis-aligned class="course" box terrain (gap courses, stair push courses).
-        if (m_boxes.empty())
-            throw std::runtime_error("terrain XML contains no class=course boxes");
+        if (m_boxes.empty() && m_raster.empty())
+            throw std::runtime_error("terrain XML contains no class=course boxes and no height_raster.bin");
     }
+
+    bool usesRaster() const { return !m_raster.empty(); }
 
     // GAST teacher: the full yaw-aligned grid, no camera visibility mask (training
     // NoisyTerrain without its noise). Cells off the course boxes stay invalid.
@@ -62,12 +69,7 @@ public:
                 const float gx = (xi - 8) * .1f;
                 const float wx = body.pos[0] + cy * gx - sy * gy;
                 const float wy = body.pos[1] + sy * gx + cy * gy;
-                float z = -INFINITY;
-                for (const Box& box : m_boxes) {
-                    if (std::abs(wx - box.pos[0]) <= box.half[0] &&
-                        std::abs(wy - box.pos[1]) <= box.half[1])
-                        z = std::max(z, box.pos[2] + box.half[2]);
-                }
+                const float z = surface(wx, wy);
                 if (!std::isfinite(z)) continue;
                 const int index = yi * 17 + xi;
                 out[index] = 5.f * std::clamp(body.pos[2] - z - .5f, -1.f, 1.f);
@@ -91,12 +93,7 @@ public:
                 const float gx = (xi - 8) * .1f;
                 const float wx = body.pos[0] + cy * gx - sy * gy;
                 const float wy = body.pos[1] + sy * gx + cy * gy;
-                float z = -INFINITY;
-                for (const Box& box : m_boxes) {
-                    if (std::abs(wx - box.pos[0]) <= box.half[0] &&
-                        std::abs(wy - box.pos[1]) <= box.half[1])
-                        z = std::max(z, box.pos[2] + box.half[2]);
-                }
+                const float z = surface(wx, wy);
                 if (!std::isfinite(z)) continue;
                 const Vec point{wx, wy, z};
                 bool visible = false;
@@ -132,6 +129,34 @@ public:
     }
 
 private:
+    // Top surface at (wx, wy); -INFINITY off the course.
+    float surface(float wx, float wy) const {
+        if (!m_raster.empty()) {
+            const long i = std::lround((wx - m_rx0) / m_rres), j = std::lround((wy - m_ry0) / m_rres);
+            if (i < 0 || j < 0 || i >= m_rnx || j >= m_rny) return -INFINITY;
+            const float z = m_raster[static_cast<size_t>(j) * m_rnx + i];
+            return std::isfinite(z) ? z : -INFINITY;
+        }
+        float z = -INFINITY;
+        for (const Box& box : m_boxes) {
+            if (std::abs(wx - box.pos[0]) <= box.half[0] &&
+                std::abs(wy - box.pos[1]) <= box.half[1])
+                z = std::max(z, box.pos[2] + box.half[2]);
+        }
+        return z;
+    }
+    void loadRaster(const std::string& path) {
+        std::ifstream in(path, std::ios::binary);
+        if (!in) return;
+        char magic[4]; int32_t n[2]; float f[3];
+        in.read(magic, 4); in.read(reinterpret_cast<char*>(n), sizeof n); in.read(reinterpret_cast<char*>(f), sizeof f);
+        if (!in || std::string(magic, 4) != "HRST" || n[0] <= 0 || n[1] <= 0 || !(f[2] > 0))
+            throw std::runtime_error("bad height raster header: " + path);
+        m_raster.resize(static_cast<size_t>(n[0]) * n[1]);
+        in.read(reinterpret_cast<char*>(m_raster.data()), m_raster.size() * sizeof(float));
+        if (!in) throw std::runtime_error("truncated height raster: " + path);
+        m_rnx = n[0]; m_rny = n[1]; m_rx0 = f[0]; m_ry0 = f[1]; m_rres = f[2];
+    }
     static Vec parseVec(const std::string& value) {
         Vec out{};
         size_t at = 0;
@@ -171,4 +196,7 @@ private:
     }
     CameraProfile m_cameras;
     std::vector<Box> m_boxes;
+    std::vector<float> m_raster;
+    long m_rnx = 0, m_rny = 0;
+    float m_rx0 = 0, m_ry0 = 0, m_rres = 0;
 };
