@@ -19,7 +19,8 @@ bash scripts/gast/teacher/gast_v21_2000/run_sim.sh stairs20           # 교사 2
 
 RBQ_SIM_OBS_NOISE=1 RBQ_PAYLOAD_KG=0 bash scripts/gast/teacher/gast_v21_mg26123_top1/run_sim.sh force4  # 센서 노이즈, 탑재물 없음
 bash scripts/push.sh pull 200 0.6                                      # 계단 손잡이 당김 (MujocoGastSync)
-bash evaluation/force4.sh                                              # 20 cm 계단 외력 4종 시나리오 + 영상 (조건은 파일 머리말)
+bash scripts/gast/teacher/gast_v21_mg26123_top1/run_force4.sh          # 20 cm 계단 외력 4종 시나리오 + 영상 (26123)
+bash scripts/gast/teacher/gast_v21_2000/run_force4.sh                  # 같은 시나리오, 교사 2000 (변수: evaluation/force4.sh)
 ```
 
 | 코스 | 지형 폴더 | 내용 |
