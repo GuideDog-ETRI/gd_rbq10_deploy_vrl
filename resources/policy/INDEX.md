@@ -22,7 +22,7 @@ scripts/gast/teacher/gast_v21_mg26123_top1/run_sim.sh stop
 
 환경 변수: `RBQ_PAYLOAD_KG`(기본 6, 0 = 탑재물 없음), `RBQ_SIM_OBS_NOISE=1`(학습 계약 센서 노이즈, `perception/common/SimObsNoise.hpp`).
 
-계단 외력 4종 시나리오(한 번의 실행, 영상과 PASS/FAIL 자동 저장): `evaluation/force4.sh` — 파일 머리말에 조건과 변수.
+계단 외력 4종 시나리오(한 번의 실행, 영상과 PASS/FAIL 자동 저장): 모델별 `scripts/gast/teacher/<모델>/run_force4.sh` — 조건과 변수는 `evaluation/force4.sh` 머리말.
 
 GAST 교사 묶음은 `export/gast_teacher_oracle.py`로 다시 만들 수 있다 (`GD_LAB_TRAIN_ROOT` = gd_lab_vrl 체크아웃, 가중치는
 gd_lab_vrl `checkpoints/teachers/gast/`).

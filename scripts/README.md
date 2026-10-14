@@ -12,6 +12,7 @@
 | GAST 교사 oracle | `gast/teacher/gast_v21_2000` | 업데이트 2000 (SHA db500e96…) | 없음 (정답 높이맵) | gap |
 | GAST 교사 oracle | `gast/teacher/run_sim.sh <묶음>` | 묶음 이름을 인자로 (`export/gast_teacher_oracle.py`로 만든 묶음) | 없음 | gap |
 
+- `run_force4.sh`(각 교사 폴더): force4 코스에서 20 cm 계단 외력 4종 시나리오 1회 + 영상(PASS/FAIL). 변수는 `../evaluation/force4.sh`.
 - 환경 변수: `RBQ_PAYLOAD_KG`(기본 6, 0 = 없음), `RBQ_SIM_OBS_NOISE=1`(학습 계약 센서 노이즈).
 - `push.sh pull|push [N] [초]`: MujocoGastSync를 쓰는 실행기(교사 oracle, GAST 학생)에서 계단 손잡이 외력.
 - `common/run_robot.sh`: 실기 Pilot. `common/deploy.sh`: 타깃 배포. `common/make_appimage.sh`: 콘솔 AppImage.
