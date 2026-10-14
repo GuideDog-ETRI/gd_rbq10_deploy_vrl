@@ -1,0 +1,754 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mujoco model="rbq course">
+
+    <statistic center="23.5 0 1" extent="25.8"/>
+
+    <visual>
+        <headlight diffuse="0.6 0.6 0.6" ambient="0.3 0.3 0.3" specular="0 0 0"/>
+        <rgba haze="0.15 0.25 0.35 1"/>
+        <global azimuth="-130" elevation="-20"/>
+    </visual>
+
+    <asset>
+        <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072"/>
+
+        <texture type="2d" name="mat_pink" builtin="checker" mark="edge" rgb1="0.85 0.35 0.55" rgb2="0.75 0.25 0.45"
+            markrgb="0.95 0.8 0.85" width="128" height="128"/>
+        <material name="mat_pink_material" texture="mat_pink" texuniform="true" texrepeat="4 3" reflectance="0.1"/>
+
+        <texture type="2d" name="mat_blue" builtin="checker" mark="edge" rgb1="0.25 0.45 0.8" rgb2="0.15 0.35 0.7"
+            markrgb="0.8 0.88 0.95" width="128" height="128"/>
+        <material name="mat_blue_material" texture="mat_blue" texuniform="true" texrepeat="4 3" reflectance="0.1"/>
+
+        <texture type="2d" name="brick" builtin="checker" mark="edge" rgb1="0.55 0.22 0.18" rgb2="0.45 0.16 0.13"
+            markrgb="0.3 0.1 0.08" width="128" height="128"/>
+        <material name="brick_material" texture="brick" texuniform="true" texrepeat="6 3" reflectance="0.05"/>
+
+        <texture type="2d" name="stair_checker" builtin="checker" mark="edge" rgb1="0.4 0.4 0.4" rgb2="0.6 0.6 0.6"
+            markrgb="0.2 0.2 0.2" width="256" height="256"/>
+        <material name="stair_material" texture="stair_checker" texuniform="true" texrepeat="3 3" reflectance="0.1"/>
+
+        <hfield name="course_mountain" file="env/vrl_progression/course_mountain_heightmap.png" nrow="128" ncol="256"
+                size="2.00 1.25 0.35 0.1"/>
+        <texture type="2d" name="rock" builtin="checker" rgb1="0.35 0.3 0.25" rgb2="0.3 0.25 0.2" width="200" height="200"/>
+        <material name="rock_material" texture="rock" texuniform="true" texrepeat="10 10" reflectance="0.05"/>
+    </asset>
+
+    <default>
+        <default class="obstacle">
+            <geom type="box" friction="0.8 0.8 0.8" priority="2"/>
+        </default>
+    </default>
+
+    <worldbody>
+        <light pos="0 0 6" dir="0 0 -1" directional="true"/>
+        <light name="robot_light" pos="24.2 0 4" dir="0 0 -1" diffuse="0.7 0.7 0.7" specular="0.2 0.2 0.2"/>
+
+        <!-- 2026-09-15: 기존 보행로(y=[-1.25,1.25], pyr_stair1 만 y=±2.1 로 더 넓음)
+             옆에 폭 3m짜리 평평한 직선 시험 보행로를 붙였다. 자꾸 넘어지는 구간(마찰
+             구간, 계단, 산악지형, 갭 등)을 매번 처음부터 다시 통과하지 않고도, 이
+             평평한 레인을 곧장 걸어가서 원하는 x 지점에서 옆으로(-y) 이동해 실제
+             보행로에 진입해 그 구간만 테스트할 수 있게 하기 위함. 바깥쪽 가드월을
+             그만큼 밀어내고(guard_wall_pos_y, 1.26->4.28) 그 사이를 flat_test_lane
+             으로 채웠다. 안쪽 경계(y=1.26)엔 벽이 없어서 자유롭게 옆으로 넘나든다.
+             pyr_stair1(x=9.6-13.8)의 outermost 계단(top z=0.15)이 이 레인의 안쪽
+             일부(y=1.26-2.1)와 지하로 겹치는데, 둘 다 정적 지오메트리라 물리적으로
+             무해하고, 그 구간만 지표면이 pyr_stair1 쪽으로 15cm 정도 얕게 걸린다. -->
+        <geom name="guard_wall_pos_y" type="box" pos="23.300 4.280 0" size="25.300 0.020 3.000"
+              rgba="0.7 0.85 1.0 0.15" contype="1" conaffinity="1"/>
+        <geom name="guard_wall_neg_y" type="box" pos="23.300 -1.260 0" size="25.300 0.020 3.000"
+              rgba="0.7 0.85 1.0 0.15" contype="1" conaffinity="1"/>
+        <!-- 2026-09-15: 시작 지점(start_pad, x=[-2.0,0.6]) 뒤로 후진하면 guard wall이
+             옆(y)만 막고 뒤(-x)는 안 막아서 그대로 코스 밖으로 떨어짐. 옆벽과 같은
+             스타일의 투명 마감벽을 시작 지점 바로 뒤에 추가. -->
+        <geom name="start_wall_neg_x" type="box" pos="-2.050 1.510 0" size="0.020 2.770 3.000"
+              rgba="0.7 0.85 1.0 0.15" contype="1" conaffinity="1"/>
+        <!-- flat_test_lane 을 두 조각으로 나눴다: a 는 y=0 구간(마찰/피라미드/계단전환
+             까지), b 는 ramp_up 을 넘어간 뒤의 높은 구간(z=1.1, gap_run/mountain
+             진입부와 같은 높이. 갭 구간까지 평평하게 이어서 갈 수 있음).
+             그 사이(x=16.9-20.4)는 아래에서 폭을 넓힌 ramp_up 자체가 레인의
+             경사 연결부를 겸한다. 44.1m 이후(마지막 오르내리는 계단, landing_end)는
+             또 다른 높이라 아직 이 레인이 안 이어짐. 필요하면 세그먼트 추가 가능. -->
+        <geom name="flat_test_lane_a" class="obstacle" type="box" pos="7.400 2.760 -1.500" size="9.400 1.500 1.500"
+              rgba="0.55 0.75 0.55 1"/>
+        <geom name="flat_test_lane_b" class="obstacle" type="box" pos="32.280 2.760 -0.400" size="11.820 1.500 1.500"
+              rgba="0.55 0.75 0.55 1"/>
+        <!-- 아래 두 개는 옆(-y, 기존 보행로 쪽)으로 갈수록 실제 지형 높이에 맞춰
+             올라가는 연결 경사로. roll(X축 회전)로 기울여서 y=1.85(레인 쪽, z=0)에서
+             y=1.25(기존 보행로 edge)까지 높이를 자연스럽게 이어붙인다.
+             주의: rbq.xml 의 compiler angle="radian" 설정이 이 파일 전체(include된
+             environment_course.xml 포함)에 적용된다. euler 는 도(degree)가 아니라
+             라디안으로 써야 한다. 처음에 도 단위로 넣어서(예: 165.9638) 경사로가
+             거의 수직으로 서버리는 버그가 났었다 (스크린샷으로 확인). -->
+        <geom name="ramp_conn_pyramid" class="obstacle" type="box" pos="11.700 1.5621 0.1235"
+              euler="2.896614 0 0" size="2.100 0.3092 0.050" material="stair_material" rgba="1 1 1 1"/>
+        <geom name="ramp_conn_easy_stairs" class="obstacle" type="box" pos="15.325 1.5854 0.3354"
+              euler="2.356194 0 0" size="1.525 0.4243 0.050" material="stair_material" rgba="1 1 1 1"/>
+
+                <geom name="start_pad" class="obstacle" type="box" pos="-0.700 0 -1.500" size="1.300 1.250 1.500" rgba="0.55 0.55 0.55 1"/>
+        <geom name="mat_pink" class="obstacle" type="box" pos="2.100 0 -1.500" size="1.500 1.250 1.500" material="mat_pink_material" rgba="1 1 1 1" friction="0.8 0.6 0.6" solref="0.045 1" solimp="0.55 0.85 0.01 0.5 2"/>
+        <geom name="mat_blue" class="obstacle" type="box" pos="4.925 -0.625 -1.500" size="1.325 0.625 1.500" material="mat_blue_material" rgba="1 1 1 1" friction="0.05 0.004 0.0002"/>
+        <geom name="mat_blue_easy" class="obstacle" type="box" pos="4.925 0.625 -1.500" size="1.325 0.625 1.500" rgba="0.55 0.55 0.55 1"/>
+        <!-- 2026-09-15: 얼음 구간(마찰 0.05) 바로 뒤에 10cm 턱(brick_curb_x0, x=6.6)이
+             완충 구간 없이 바로 붙어 있어서, 로봇이 미끄러운 마지막 스텝에서 턱을 오를
+             힘을 못 받고 계속 넘어짐. 턱 앞 0.35m를 정상 마찰(class=obstacle 기본 0.8)
+             구간으로 비워 최소 한 스텝은 안정적으로 딛고 턱을 오를 수 있게 함. -->
+        <geom name="mat_blue_grip_buffer" class="obstacle" type="box" pos="6.425 0 -1.500" size="0.175 1.250 1.500" rgba="0.6 0.58 0.55 1"/>
+        <geom name="brick_red" class="obstacle" type="box" pos="8.100 0 -1.500" size="1.500 1.250 1.500" material="brick_material" rgba="1 1 1 1"/>
+        <geom name="brick_rail_pos_y" class="obstacle" type="box" pos="8.100 1.270 0.080" size="1.500 0.030 0.080" rgba="0.3 0.28 0.25 1"/>
+        <geom name="brick_rail_neg_y" class="obstacle" type="box" pos="8.100 -1.270 0.080" size="1.500 0.030 0.080" rgba="0.3 0.28 0.25 1"/>
+        <geom name="brick_curb_x0" class="obstacle" type="box" pos="6.600 0 0.050" size="0.015 1.250 0.050" rgba="0.3 0.28 0.25 1"/>
+        <geom name="brick_curb_x1" class="obstacle" type="box" pos="9.600 0 0.050" size="0.015 1.250 0.050" rgba="0.3 0.28 0.25 1"/>
+        <geom name="marble_pen_pos_y" class="obstacle" type="box" pos="8.100 0.500 0.050" size="1.000 0.015 0.050" rgba="0.3 0.28 0.25 1"/>
+        <geom name="marble_pen_neg_y" class="obstacle" type="box" pos="8.100 -0.500 0.050" size="1.000 0.015 0.050" rgba="0.3 0.28 0.25 1"/>
+        <geom name="marble_pen_pos_x" class="obstacle" type="box" pos="9.100 0 0.050" size="0.015 0.500 0.050" rgba="0.3 0.28 0.25 1"/>
+        <geom name="marble_pen_neg_x" class="obstacle" type="box" pos="7.100 0 0.050" size="0.015 0.500 0.050" rgba="0.3 0.28 0.25 1"/>
+        <body name="marble_1" pos="8.149 -0.073 0.037">
+            <freejoint/>
+            <geom name="marble_1" type="sphere" size="0.0324" mass="0.05" friction="0.02 0.002 0.0001" rgba="0.62 0.58 0.52 1"/>
+        </body>
+        <body name="marble_2" pos="8.238 -0.243 0.041">
+            <freejoint/>
+            <geom name="marble_2" type="sphere" size="0.036" mass="0.05" friction="0.02 0.002 0.0001" rgba="0.62 0.58 0.52 1"/>
+        </body>
+        <body name="marble_3" pos="8.471 -0.135 0.035">
+            <freejoint/>
+            <geom name="marble_3" type="sphere" size="0.0301" mass="0.05" friction="0.02 0.002 0.0001" rgba="0.62 0.58 0.52 1"/>
+        </body>
+        <body name="marble_4" pos="8.645 -0.017 0.037">
+            <freejoint/>
+            <geom name="marble_4" type="sphere" size="0.0323" mass="0.05" friction="0.02 0.002 0.0001" rgba="0.62 0.58 0.52 1"/>
+        </body>
+        <body name="marble_5" pos="8.074 0.078 0.043">
+            <freejoint/>
+            <geom name="marble_5" type="sphere" size="0.0384" mass="0.05" friction="0.02 0.002 0.0001" rgba="0.62 0.58 0.52 1"/>
+        </body>
+        <body name="marble_6" pos="8.248 0.206 0.036">
+            <freejoint/>
+            <geom name="marble_6" type="sphere" size="0.0315" mass="0.05" friction="0.02 0.002 0.0001" rgba="0.62 0.58 0.52 1"/>
+        </body>
+        <body name="marble_7" pos="8.365 0.096 0.04">
+            <freejoint/>
+            <geom name="marble_7" type="sphere" size="0.0352" mass="0.05" friction="0.02 0.002 0.0001" rgba="0.62 0.58 0.52 1"/>
+        </body>
+        <body name="marble_8" pos="7.584 0.205 0.038">
+            <freejoint/>
+            <geom name="marble_8" type="sphere" size="0.033" mass="0.05" friction="0.02 0.002 0.0001" rgba="0.62 0.58 0.52 1"/>
+        </body>
+        <body name="marble_9" pos="8.341 0.212 0.04">
+            <freejoint/>
+            <geom name="marble_9" type="sphere" size="0.0347" mass="0.05" friction="0.02 0.002 0.0001" rgba="0.62 0.58 0.52 1"/>
+        </body>
+        <body name="marble_10" pos="8.563 -0.059 0.042">
+            <freejoint/>
+            <geom name="marble_10" type="sphere" size="0.0371" mass="0.05" friction="0.02 0.002 0.0001" rgba="0.62 0.58 0.52 1"/>
+        </body>
+        <body name="marble_11" pos="8.039 0.244 0.043">
+            <freejoint/>
+            <geom name="marble_11" type="sphere" size="0.038" mass="0.05" friction="0.02 0.002 0.0001" rgba="0.62 0.58 0.52 1"/>
+        </body>
+        <body name="marble_12" pos="7.657 -0.204 0.044">
+            <freejoint/>
+            <geom name="marble_12" type="sphere" size="0.0388" mass="0.05" friction="0.02 0.002 0.0001" rgba="0.62 0.58 0.52 1"/>
+        </body>
+        <body name="marble_13" pos="7.881 0.004 0.041">
+            <freejoint/>
+            <geom name="marble_13" type="sphere" size="0.0363" mass="0.05" friction="0.02 0.002 0.0001" rgba="0.62 0.58 0.52 1"/>
+        </body>
+        <body name="marble_14" pos="8.545 0.102 0.041">
+            <freejoint/>
+            <geom name="marble_14" type="sphere" size="0.0358" mass="0.05" friction="0.02 0.002 0.0001" rgba="0.62 0.58 0.52 1"/>
+        </body>
+        <body name="marble_15" pos="8.492 0.275 0.044">
+            <freejoint/>
+            <geom name="marble_15" type="sphere" size="0.0393" mass="0.05" friction="0.02 0.002 0.0001" rgba="0.62 0.58 0.52 1"/>
+        </body>
+        <body name="marble_16" pos="7.729 0.202 0.042">
+            <freejoint/>
+            <geom name="marble_16" type="sphere" size="0.0367" mass="0.05" friction="0.02 0.002 0.0001" rgba="0.62 0.58 0.52 1"/>
+        </body>
+        <body name="marble_17" pos="7.863 -0.244 0.041">
+            <freejoint/>
+            <geom name="marble_17" type="sphere" size="0.0357" mass="0.05" friction="0.02 0.002 0.0001" rgba="0.62 0.58 0.52 1"/>
+        </body>
+        <body name="marble_18" pos="8.639 -0.23 0.043">
+            <freejoint/>
+            <geom name="marble_18" type="sphere" size="0.0385" mass="0.05" friction="0.02 0.002 0.0001" rgba="0.62 0.58 0.52 1"/>
+        </body>
+        <body name="marble_19" pos="8.002 -0.196 0.043">
+            <freejoint/>
+            <geom name="marble_19" type="sphere" size="0.038" mass="0.05" friction="0.02 0.002 0.0001" rgba="0.62 0.58 0.52 1"/>
+        </body>
+        <body name="marble_20" pos="7.914 0.213 0.042">
+            <freejoint/>
+            <geom name="marble_20" type="sphere" size="0.0372" mass="0.05" friction="0.02 0.002 0.0001" rgba="0.62 0.58 0.52 1"/>
+        </body>
+        <body name="marble_21" pos="7.635 0.056 0.038">
+            <freejoint/>
+            <geom name="marble_21" type="sphere" size="0.0331" mass="0.05" friction="0.02 0.002 0.0001" rgba="0.62 0.58 0.52 1"/>
+        </body>
+        <body name="marble_22" pos="7.767 -0.052 0.035">
+            <freejoint/>
+            <geom name="marble_22" type="sphere" size="0.0303" mass="0.05" friction="0.02 0.002 0.0001" rgba="0.62 0.58 0.52 1"/>
+        </body>
+        <body name="marble_23" pos="7.722 -0.256 0.041">
+            <freejoint/>
+            <geom name="marble_23" type="sphere" size="0.0361" mass="0.05" friction="0.02 0.002 0.0001" rgba="0.62 0.58 0.52 1"/>
+        </body>
+        <body name="marble_24" pos="7.966 -0.022 0.044">
+            <freejoint/>
+            <geom name="marble_24" type="sphere" size="0.039" mass="0.05" friction="0.02 0.002 0.0001" rgba="0.62 0.58 0.52 1"/>
+        </body>
+        <body name="marble_25" pos="8.258 0.054 0.04">
+            <freejoint/>
+            <geom name="marble_25" type="sphere" size="0.0352" mass="0.05" friction="0.02 0.002 0.0001" rgba="0.62 0.58 0.52 1"/>
+        </body>
+        <body name="marble_26" pos="8.153 -0.274 0.04">
+            <freejoint/>
+            <geom name="marble_26" type="sphere" size="0.0352" mass="0.05" friction="0.02 0.002 0.0001" rgba="0.62 0.58 0.52 1"/>
+        </body>
+        <body name="marble_27" pos="7.902 -0.076 0.041">
+            <freejoint/>
+            <geom name="marble_27" type="sphere" size="0.0359" mass="0.05" friction="0.02 0.002 0.0001" rgba="0.62 0.58 0.52 1"/>
+        </body>
+        <body name="marble_28" pos="7.965 0.152 0.038">
+            <freejoint/>
+            <geom name="marble_28" type="sphere" size="0.033" mass="0.05" friction="0.02 0.002 0.0001" rgba="0.62 0.58 0.52 1"/>
+        </body>
+        <body name="marble_29" pos="8.176 0.132 0.035">
+            <freejoint/>
+            <geom name="marble_29" type="sphere" size="0.0303" mass="0.05" friction="0.02 0.002 0.0001" rgba="0.62 0.58 0.52 1"/>
+        </body>
+        <body name="marble_30" pos="7.662 -0.1 0.042">
+            <freejoint/>
+            <geom name="marble_30" type="sphere" size="0.037" mass="0.05" friction="0.02 0.002 0.0001" rgba="0.62 0.58 0.52 1"/>
+        </body>
+
+        <geom name="pyr_stair1" class="obstacle" type="box" pos="11.700 0 0.000" size="2.100 2.100 0.150" material="stair_material" rgba="0.50 0.50 0.50 1"/>
+        <geom name="pyr_stair2" class="obstacle" type="box" pos="11.700 0 0.000" size="1.800 1.800 0.300" material="stair_material" rgba="0.44 0.44 0.44 1"/>
+        <geom name="pyr_stair3" class="obstacle" type="box" pos="11.700 0 0.000" size="1.500 1.500 0.450" material="stair_material" rgba="0.38 0.38 0.38 1"/>
+        <geom name="pyr_stair4" class="obstacle" type="box" pos="11.700 0 0.000" size="1.200 1.200 0.600" material="stair_material" rgba="0.32 0.32 0.32 1"/>
+        <geom name="pyr_stair5" class="obstacle" type="box" pos="11.700 0 0.000" size="0.900 0.900 0.750" material="stair_material" rgba="0.26 0.26 0.26 1"/>
+        <geom name="pyr_stair6" class="obstacle" type="box" pos="11.700 0 0.000" size="0.600 0.600 0.900" material="stair_material" rgba="0.20 0.20 0.20 1"/>
+        <geom name="landing_pyr" class="obstacle" type="box" pos="13.850 -0.625 -1.500" size="0.050 0.625 1.500" material="stair_material" rgba="1 1 1 1"/>
+        <geom name="stair_up_1" class="obstacle" type="box" pos="14.050 -0.625 -1.380" size="0.150 0.625 1.500" material="stair_material" rgba="0.55 0.55 0.55 1"/>
+        <geom name="stair_up_2" class="obstacle" type="box" pos="14.350 -0.625 -1.260" size="0.150 0.625 1.500" material="stair_material" rgba="0.55 0.55 0.55 1"/>
+        <geom name="stair_up_3" class="obstacle" type="box" pos="14.650 -0.625 -1.140" size="0.150 0.625 1.500" material="stair_material" rgba="0.55 0.55 0.55 1"/>
+        <geom name="stair_up_4" class="obstacle" type="box" pos="14.950 -0.625 -1.020" size="0.150 0.625 1.500" material="stair_material" rgba="0.55 0.55 0.55 1"/>
+        <geom name="stair_up_5" class="obstacle" type="box" pos="15.250 -0.625 -0.900" size="0.150 0.625 1.500" material="stair_material" rgba="0.55 0.55 0.55 1"/>
+        <geom name="landing_1" class="obstacle" type="box" pos="15.700 -0.625 -0.900" size="0.300 0.625 1.500" material="stair_material" rgba="1 1 1 1"/>
+        <geom name="landing_pyr_easy" class="obstacle" type="box" pos="14.300 0.625 -1.500" size="0.500 0.625 1.500" material="stair_material" rgba="1 1 1 1"/>
+        <geom name="stair_up_1_easy" class="obstacle" type="box" pos="14.950 0.625 -1.380" size="0.150 0.625 1.500" material="stair_material" rgba="0.55 0.55 0.55 1"/>
+        <geom name="stair_up_2_easy" class="obstacle" type="box" pos="15.250 0.625 -1.260" size="0.150 0.625 1.500" material="stair_material" rgba="0.55 0.55 0.55 1"/>
+        <geom name="stair_up_3_easy" class="obstacle" type="box" pos="15.550 0.625 -1.140" size="0.150 0.625 1.500" material="stair_material" rgba="0.55 0.55 0.55 1"/>
+        <geom name="stair_up_4_easy" class="obstacle" type="box" pos="15.850 0.625 -1.020" size="0.150 0.625 1.500" material="stair_material" rgba="0.55 0.55 0.55 1"/>
+        <geom name="stair_up_5_easy" class="obstacle" type="box" pos="16.150 0.625 -0.900" size="0.150 0.625 1.500" material="stair_material" rgba="0.55 0.55 0.55 1"/>
+        <geom name="landing_1_easy" class="obstacle" type="box" pos="16.600 0.625 -0.900" size="0.300 0.625 1.500" material="stair_material" rgba="1 1 1 1"/>
+        <geom name="landing_1_hard_fill" class="obstacle" type="box" pos="16.450 -0.625 -0.900" size="0.450 0.625 1.500" material="stair_material" rgba="1 1 1 1"/>
+        <!-- 2026-09-15: 원래 ramp_up(9.46도, x=16.9-19.9, z=0.6->1.108) + landing_2
+             (18.57도, x=19.9-20.4, z=1.108->1.276, mountain hfield 가장자리 실제
+             높이[pos.z 1.100 + elevation_z 0.35 * edge_pixel(128/255) 약 1.276]에
+             맞추려고 짧은 구간에 몰아넣은 경사로) 두 조각이었는데, landing_2 쪽 각도가
+             너무 가팔라서 못 올라감. 하나로 합쳐서 x=16.9-20.4 전체 구간(3.5m)에 걸쳐
+             ramp_up 원래 각도(9.46도)와 비슷한 완만한 경사(10.93도)로 균일하게 폈다.
+             y 폭은 그대로 2.755(=flat_test_lane_b 외곽 4.28까지) 유지해서 옆 시험
+             레인의 연결 경사로 역할도 겸한다. -->
+        <geom name="ramp_up" class="obstacle" type="box" pos="18.678 1.505 0.791" euler="0 -0.190794 0" size="1.782 2.755 0.150" material="stair_material" rgba="1 1 1 1"/>
+        <geom name="mountain_course" class="obstacle" type="hfield" hfield="course_mountain" pos="22.400 0 1.100" material="rock_material" friction="0.9 0.8 0.5"/>
+        <geom name="landing_3" class="obstacle" type="box" pos="24.900 0 -0.400" size="0.500 1.250 1.500" material="stair_material" rgba="1 1 1 1"/>
+        <geom name="gap_run_1" class="obstacle" type="box" pos="27.400 0 -0.400" size="2.000 1.250 1.500" material="stair_material" rgba="1 1 1 1"/>
+        <geom name="gap1_bottom" class="obstacle" type="box" pos="29.450 0 -0.950" size="0.2000 1.400 0.05" rgba="0.15 0.1 0.1 1"/>
+        <geom name="gap1_wall_a" class="obstacle" type="box" pos="29.400 0 0.100" size="0.01 1.250 1.000" rgba="0.25 0.25 0.25 1"/>
+        <geom name="gap1_wall_b" class="obstacle" type="box" pos="29.500 0 0.100" size="0.01 1.250 1.000" rgba="0.25 0.25 0.25 1"/>
+        <geom name="gap_run_2" class="obstacle" type="box" pos="31.500 0 -0.400" size="2.000 1.250 1.500" material="stair_material" rgba="1 1 1 1"/>
+        <geom name="gap2_bottom" class="obstacle" type="box" pos="33.575 0 -0.950" size="0.2250 1.400 0.05" rgba="0.15 0.1 0.1 1"/>
+        <geom name="gap2_wall_a" class="obstacle" type="box" pos="33.500 0 0.100" size="0.01 1.250 1.000" rgba="0.25 0.25 0.25 1"/>
+        <geom name="gap2_wall_b" class="obstacle" type="box" pos="33.650 0 0.100" size="0.01 1.250 1.000" rgba="0.25 0.25 0.25 1"/>
+        <geom name="gap_run_3" class="obstacle" type="box" pos="35.650 0 -0.400" size="2.000 1.250 1.500" material="stair_material" rgba="1 1 1 1"/>
+        <geom name="gap3_bottom" class="obstacle" type="box" pos="37.750 0 -0.950" size="0.2500 1.400 0.05" rgba="0.15 0.1 0.1 1"/>
+        <geom name="gap3_wall_a" class="obstacle" type="box" pos="37.650 0 0.100" size="0.01 1.250 1.000" rgba="0.25 0.25 0.25 1"/>
+        <geom name="gap3_wall_b" class="obstacle" type="box" pos="37.850 0 0.100" size="0.01 1.250 1.000" rgba="0.25 0.25 0.25 1"/>
+        <geom name="gap_run_4" class="obstacle" type="box" pos="39.850 0 -0.400" size="2.000 1.250 1.500" material="stair_material" rgba="1 1 1 1"/>
+        <geom name="gap4_bottom" class="obstacle" type="box" pos="41.975 0 -0.950" size="0.2750 1.400 0.05" rgba="0.15 0.1 0.1 1"/>
+        <geom name="gap4_wall_a" class="obstacle" type="box" pos="41.850 0 0.100" size="0.01 1.250 1.000" rgba="0.25 0.25 0.25 1"/>
+        <geom name="gap4_wall_b" class="obstacle" type="box" pos="42.100 0 0.100" size="0.01 1.250 1.000" rgba="0.25 0.25 0.25 1"/>
+        <geom name="gap_run_end" class="obstacle" type="box" pos="43.100 0 -0.400" size="1.000 1.250 1.500" material="stair_material" rgba="1 1 1 1"/>
+        <geom name="stair_asc_1" class="obstacle" type="box" pos="44.250 0 -0.250" size="0.150 1.250 1.500" material="stair_material" rgba="0.55 0.55 0.55 1"/>
+        <geom name="stair_asc_2" class="obstacle" type="box" pos="44.550 0 -0.100" size="0.150 1.250 1.500" material="stair_material" rgba="0.55 0.55 0.55 1"/>
+        <geom name="stair_asc_3" class="obstacle" type="box" pos="44.850 0 0.050" size="0.150 1.250 1.500" material="stair_material" rgba="0.55 0.55 0.55 1"/>
+        <geom name="stair_asc_4" class="obstacle" type="box" pos="45.150 0 0.200" size="0.150 1.250 1.500" material="stair_material" rgba="0.55 0.55 0.55 1"/>
+        <geom name="stair_asc_5" class="obstacle" type="box" pos="45.450 0 0.350" size="0.150 1.250 1.500" material="stair_material" rgba="0.55 0.55 0.55 1"/>
+        <geom name="landing_4" class="obstacle" type="box" pos="45.850 0 0.350" size="0.250 1.250 1.500" material="stair_material" rgba="1 1 1 1"/>
+        <geom name="stair_desc_1" class="obstacle" type="box" pos="46.250 0 0.200" size="0.150 1.250 1.500" material="stair_material" rgba="0.55 0.55 0.55 1"/>
+        <geom name="stair_desc_2" class="obstacle" type="box" pos="46.550 0 0.050" size="0.150 1.250 1.500" material="stair_material" rgba="0.55 0.55 0.55 1"/>
+        <geom name="stair_desc_3" class="obstacle" type="box" pos="46.850 0 -0.100" size="0.150 1.250 1.500" material="stair_material" rgba="0.55 0.55 0.55 1"/>
+        <geom name="stair_desc_4" class="obstacle" type="box" pos="47.150 0 -0.250" size="0.150 1.250 1.500" material="stair_material" rgba="0.55 0.55 0.55 1"/>
+        <geom name="stair_desc_5" class="obstacle" type="box" pos="47.450 0 -0.400" size="0.150 1.250 1.500" material="stair_material" rgba="0.55 0.55 0.55 1"/>
+        <geom name="stair_desc_6" class="obstacle" type="box" pos="47.750 0 -0.550" size="0.150 1.250 1.500" material="stair_material" rgba="0.55 0.55 0.55 1"/>
+        <geom name="stair_desc_7" class="obstacle" type="box" pos="48.050 0 -0.700" size="0.150 1.250 1.500" material="stair_material" rgba="0.55 0.55 0.55 1"/>
+        <geom name="stair_desc_8" class="obstacle" type="box" pos="48.350 0 -0.850" size="0.150 1.250 1.500" material="stair_material" rgba="0.55 0.55 0.55 1"/>
+        <geom name="landing_end" class="obstacle" type="box" pos="49.000 0 -0.850" size="0.500 1.250 1.500" material="stair_material" rgba="1 1 1 1"/>
+    </worldbody>
+
+    <contact>
+        <pair geom1="RR" geom2="guard_wall_pos_y"/>
+        <pair geom1="RL" geom2="guard_wall_pos_y"/>
+        <pair geom1="FR" geom2="guard_wall_pos_y"/>
+        <pair geom1="FL" geom2="guard_wall_pos_y"/>
+        <pair geom1="RR" geom2="guard_wall_neg_y"/>
+        <pair geom1="RL" geom2="guard_wall_neg_y"/>
+        <pair geom1="FR" geom2="guard_wall_neg_y"/>
+        <pair geom1="FL" geom2="guard_wall_neg_y"/>
+        <pair geom1="RR" geom2="start_wall_neg_x"/>
+        <pair geom1="RL" geom2="start_wall_neg_x"/>
+        <pair geom1="FR" geom2="start_wall_neg_x"/>
+        <pair geom1="FL" geom2="start_wall_neg_x"/>
+        <pair geom1="RR" geom2="flat_test_lane_a"/>
+        <pair geom1="RL" geom2="flat_test_lane_a"/>
+        <pair geom1="FR" geom2="flat_test_lane_a"/>
+        <pair geom1="FL" geom2="flat_test_lane_a"/>
+        <pair geom1="RR" geom2="flat_test_lane_b"/>
+        <pair geom1="RL" geom2="flat_test_lane_b"/>
+        <pair geom1="FR" geom2="flat_test_lane_b"/>
+        <pair geom1="FL" geom2="flat_test_lane_b"/>
+        <pair geom1="RR" geom2="ramp_conn_pyramid"/>
+        <pair geom1="RL" geom2="ramp_conn_pyramid"/>
+        <pair geom1="FR" geom2="ramp_conn_pyramid"/>
+        <pair geom1="FL" geom2="ramp_conn_pyramid"/>
+        <pair geom1="RR" geom2="ramp_conn_easy_stairs"/>
+        <pair geom1="RL" geom2="ramp_conn_easy_stairs"/>
+        <pair geom1="FR" geom2="ramp_conn_easy_stairs"/>
+        <pair geom1="FL" geom2="ramp_conn_easy_stairs"/>
+        <pair geom1="RR" geom2="start_pad"/>
+        <pair geom1="RL" geom2="start_pad"/>
+        <pair geom1="FR" geom2="start_pad"/>
+        <pair geom1="FL" geom2="start_pad"/>
+        <pair geom1="RR" geom2="mat_pink" friction="0.8 0.8 0.6 0.6 0.6" solref="0.045 1" solimp="0.55 0.85 0.01 0.5 2"/>
+        <pair geom1="RL" geom2="mat_pink" friction="0.8 0.8 0.6 0.6 0.6" solref="0.045 1" solimp="0.55 0.85 0.01 0.5 2"/>
+        <pair geom1="FR" geom2="mat_pink" friction="0.8 0.8 0.6 0.6 0.6" solref="0.045 1" solimp="0.55 0.85 0.01 0.5 2"/>
+        <pair geom1="FL" geom2="mat_pink" friction="0.8 0.8 0.6 0.6 0.6" solref="0.045 1" solimp="0.55 0.85 0.01 0.5 2"/>
+        <pair geom1="RR" geom2="mat_blue" friction="0.05 0.05 0.004 0.0002 0.0002"/>
+        <pair geom1="RL" geom2="mat_blue" friction="0.05 0.05 0.004 0.0002 0.0002"/>
+        <pair geom1="FR" geom2="mat_blue" friction="0.05 0.05 0.004 0.0002 0.0002"/>
+        <pair geom1="FL" geom2="mat_blue" friction="0.05 0.05 0.004 0.0002 0.0002"/>
+        <pair geom1="RR" geom2="mat_blue_easy"/>
+        <pair geom1="RL" geom2="mat_blue_easy"/>
+        <pair geom1="FR" geom2="mat_blue_easy"/>
+        <pair geom1="FL" geom2="mat_blue_easy"/>
+        <pair geom1="RR" geom2="mat_blue_grip_buffer"/>
+        <pair geom1="RL" geom2="mat_blue_grip_buffer"/>
+        <pair geom1="FR" geom2="mat_blue_grip_buffer"/>
+        <pair geom1="FL" geom2="mat_blue_grip_buffer"/>
+        <pair geom1="RR" geom2="brick_red"/>
+        <pair geom1="RL" geom2="brick_red"/>
+        <pair geom1="FR" geom2="brick_red"/>
+        <pair geom1="FL" geom2="brick_red"/>
+        <pair geom1="RR" geom2="brick_rail_pos_y"/>
+        <pair geom1="RL" geom2="brick_rail_pos_y"/>
+        <pair geom1="FR" geom2="brick_rail_pos_y"/>
+        <pair geom1="FL" geom2="brick_rail_pos_y"/>
+        <pair geom1="RR" geom2="brick_rail_neg_y"/>
+        <pair geom1="RL" geom2="brick_rail_neg_y"/>
+        <pair geom1="FR" geom2="brick_rail_neg_y"/>
+        <pair geom1="FL" geom2="brick_rail_neg_y"/>
+        <pair geom1="RR" geom2="brick_curb_x0"/>
+        <pair geom1="RL" geom2="brick_curb_x0"/>
+        <pair geom1="FR" geom2="brick_curb_x0"/>
+        <pair geom1="FL" geom2="brick_curb_x0"/>
+        <pair geom1="RR" geom2="brick_curb_x1"/>
+        <pair geom1="RL" geom2="brick_curb_x1"/>
+        <pair geom1="FR" geom2="brick_curb_x1"/>
+        <pair geom1="FL" geom2="brick_curb_x1"/>
+        <pair geom1="RR" geom2="marble_pen_pos_y"/>
+        <pair geom1="RL" geom2="marble_pen_pos_y"/>
+        <pair geom1="FR" geom2="marble_pen_pos_y"/>
+        <pair geom1="FL" geom2="marble_pen_pos_y"/>
+        <pair geom1="RR" geom2="marble_pen_neg_y"/>
+        <pair geom1="RL" geom2="marble_pen_neg_y"/>
+        <pair geom1="FR" geom2="marble_pen_neg_y"/>
+        <pair geom1="FL" geom2="marble_pen_neg_y"/>
+        <pair geom1="RR" geom2="marble_pen_pos_x"/>
+        <pair geom1="RL" geom2="marble_pen_pos_x"/>
+        <pair geom1="FR" geom2="marble_pen_pos_x"/>
+        <pair geom1="FL" geom2="marble_pen_pos_x"/>
+        <pair geom1="RR" geom2="marble_pen_neg_x"/>
+        <pair geom1="RL" geom2="marble_pen_neg_x"/>
+        <pair geom1="FR" geom2="marble_pen_neg_x"/>
+        <pair geom1="FL" geom2="marble_pen_neg_x"/>
+        <pair geom1="RR" geom2="marble_1"/>
+        <pair geom1="RL" geom2="marble_1"/>
+        <pair geom1="FR" geom2="marble_1"/>
+        <pair geom1="FL" geom2="marble_1"/>
+        <pair geom1="marble_1" geom2="brick_red"/>
+        <pair geom1="RR" geom2="marble_2"/>
+        <pair geom1="RL" geom2="marble_2"/>
+        <pair geom1="FR" geom2="marble_2"/>
+        <pair geom1="FL" geom2="marble_2"/>
+        <pair geom1="marble_2" geom2="brick_red"/>
+        <pair geom1="RR" geom2="marble_3"/>
+        <pair geom1="RL" geom2="marble_3"/>
+        <pair geom1="FR" geom2="marble_3"/>
+        <pair geom1="FL" geom2="marble_3"/>
+        <pair geom1="marble_3" geom2="brick_red"/>
+        <pair geom1="RR" geom2="marble_4"/>
+        <pair geom1="RL" geom2="marble_4"/>
+        <pair geom1="FR" geom2="marble_4"/>
+        <pair geom1="FL" geom2="marble_4"/>
+        <pair geom1="marble_4" geom2="brick_red"/>
+        <pair geom1="RR" geom2="marble_5"/>
+        <pair geom1="RL" geom2="marble_5"/>
+        <pair geom1="FR" geom2="marble_5"/>
+        <pair geom1="FL" geom2="marble_5"/>
+        <pair geom1="marble_5" geom2="brick_red"/>
+        <pair geom1="RR" geom2="marble_6"/>
+        <pair geom1="RL" geom2="marble_6"/>
+        <pair geom1="FR" geom2="marble_6"/>
+        <pair geom1="FL" geom2="marble_6"/>
+        <pair geom1="marble_6" geom2="brick_red"/>
+        <pair geom1="RR" geom2="marble_7"/>
+        <pair geom1="RL" geom2="marble_7"/>
+        <pair geom1="FR" geom2="marble_7"/>
+        <pair geom1="FL" geom2="marble_7"/>
+        <pair geom1="marble_7" geom2="brick_red"/>
+        <pair geom1="RR" geom2="marble_8"/>
+        <pair geom1="RL" geom2="marble_8"/>
+        <pair geom1="FR" geom2="marble_8"/>
+        <pair geom1="FL" geom2="marble_8"/>
+        <pair geom1="marble_8" geom2="brick_red"/>
+        <pair geom1="RR" geom2="marble_9"/>
+        <pair geom1="RL" geom2="marble_9"/>
+        <pair geom1="FR" geom2="marble_9"/>
+        <pair geom1="FL" geom2="marble_9"/>
+        <pair geom1="marble_9" geom2="brick_red"/>
+        <pair geom1="RR" geom2="marble_10"/>
+        <pair geom1="RL" geom2="marble_10"/>
+        <pair geom1="FR" geom2="marble_10"/>
+        <pair geom1="FL" geom2="marble_10"/>
+        <pair geom1="marble_10" geom2="brick_red"/>
+        <pair geom1="RR" geom2="marble_11"/>
+        <pair geom1="RL" geom2="marble_11"/>
+        <pair geom1="FR" geom2="marble_11"/>
+        <pair geom1="FL" geom2="marble_11"/>
+        <pair geom1="marble_11" geom2="brick_red"/>
+        <pair geom1="RR" geom2="marble_12"/>
+        <pair geom1="RL" geom2="marble_12"/>
+        <pair geom1="FR" geom2="marble_12"/>
+        <pair geom1="FL" geom2="marble_12"/>
+        <pair geom1="marble_12" geom2="brick_red"/>
+        <pair geom1="RR" geom2="marble_13"/>
+        <pair geom1="RL" geom2="marble_13"/>
+        <pair geom1="FR" geom2="marble_13"/>
+        <pair geom1="FL" geom2="marble_13"/>
+        <pair geom1="marble_13" geom2="brick_red"/>
+        <pair geom1="RR" geom2="marble_14"/>
+        <pair geom1="RL" geom2="marble_14"/>
+        <pair geom1="FR" geom2="marble_14"/>
+        <pair geom1="FL" geom2="marble_14"/>
+        <pair geom1="marble_14" geom2="brick_red"/>
+        <pair geom1="RR" geom2="marble_15"/>
+        <pair geom1="RL" geom2="marble_15"/>
+        <pair geom1="FR" geom2="marble_15"/>
+        <pair geom1="FL" geom2="marble_15"/>
+        <pair geom1="marble_15" geom2="brick_red"/>
+        <pair geom1="RR" geom2="marble_16"/>
+        <pair geom1="RL" geom2="marble_16"/>
+        <pair geom1="FR" geom2="marble_16"/>
+        <pair geom1="FL" geom2="marble_16"/>
+        <pair geom1="marble_16" geom2="brick_red"/>
+        <pair geom1="RR" geom2="marble_17"/>
+        <pair geom1="RL" geom2="marble_17"/>
+        <pair geom1="FR" geom2="marble_17"/>
+        <pair geom1="FL" geom2="marble_17"/>
+        <pair geom1="marble_17" geom2="brick_red"/>
+        <pair geom1="RR" geom2="marble_18"/>
+        <pair geom1="RL" geom2="marble_18"/>
+        <pair geom1="FR" geom2="marble_18"/>
+        <pair geom1="FL" geom2="marble_18"/>
+        <pair geom1="marble_18" geom2="brick_red"/>
+        <pair geom1="RR" geom2="marble_19"/>
+        <pair geom1="RL" geom2="marble_19"/>
+        <pair geom1="FR" geom2="marble_19"/>
+        <pair geom1="FL" geom2="marble_19"/>
+        <pair geom1="marble_19" geom2="brick_red"/>
+        <pair geom1="RR" geom2="marble_20"/>
+        <pair geom1="RL" geom2="marble_20"/>
+        <pair geom1="FR" geom2="marble_20"/>
+        <pair geom1="FL" geom2="marble_20"/>
+        <pair geom1="marble_20" geom2="brick_red"/>
+        <pair geom1="RR" geom2="marble_21"/>
+        <pair geom1="RL" geom2="marble_21"/>
+        <pair geom1="FR" geom2="marble_21"/>
+        <pair geom1="FL" geom2="marble_21"/>
+        <pair geom1="marble_21" geom2="brick_red"/>
+        <pair geom1="RR" geom2="marble_22"/>
+        <pair geom1="RL" geom2="marble_22"/>
+        <pair geom1="FR" geom2="marble_22"/>
+        <pair geom1="FL" geom2="marble_22"/>
+        <pair geom1="marble_22" geom2="brick_red"/>
+        <pair geom1="RR" geom2="marble_23"/>
+        <pair geom1="RL" geom2="marble_23"/>
+        <pair geom1="FR" geom2="marble_23"/>
+        <pair geom1="FL" geom2="marble_23"/>
+        <pair geom1="marble_23" geom2="brick_red"/>
+        <pair geom1="RR" geom2="marble_24"/>
+        <pair geom1="RL" geom2="marble_24"/>
+        <pair geom1="FR" geom2="marble_24"/>
+        <pair geom1="FL" geom2="marble_24"/>
+        <pair geom1="marble_24" geom2="brick_red"/>
+        <pair geom1="RR" geom2="marble_25"/>
+        <pair geom1="RL" geom2="marble_25"/>
+        <pair geom1="FR" geom2="marble_25"/>
+        <pair geom1="FL" geom2="marble_25"/>
+        <pair geom1="marble_25" geom2="brick_red"/>
+        <pair geom1="RR" geom2="marble_26"/>
+        <pair geom1="RL" geom2="marble_26"/>
+        <pair geom1="FR" geom2="marble_26"/>
+        <pair geom1="FL" geom2="marble_26"/>
+        <pair geom1="marble_26" geom2="brick_red"/>
+        <pair geom1="RR" geom2="marble_27"/>
+        <pair geom1="RL" geom2="marble_27"/>
+        <pair geom1="FR" geom2="marble_27"/>
+        <pair geom1="FL" geom2="marble_27"/>
+        <pair geom1="marble_27" geom2="brick_red"/>
+        <pair geom1="RR" geom2="marble_28"/>
+        <pair geom1="RL" geom2="marble_28"/>
+        <pair geom1="FR" geom2="marble_28"/>
+        <pair geom1="FL" geom2="marble_28"/>
+        <pair geom1="marble_28" geom2="brick_red"/>
+        <pair geom1="RR" geom2="marble_29"/>
+        <pair geom1="RL" geom2="marble_29"/>
+        <pair geom1="FR" geom2="marble_29"/>
+        <pair geom1="FL" geom2="marble_29"/>
+        <pair geom1="marble_29" geom2="brick_red"/>
+        <pair geom1="RR" geom2="marble_30"/>
+        <pair geom1="RL" geom2="marble_30"/>
+        <pair geom1="FR" geom2="marble_30"/>
+        <pair geom1="FL" geom2="marble_30"/>
+        <pair geom1="marble_30" geom2="brick_red"/>
+
+        <pair geom1="RR" geom2="pyr_stair1"/>
+        <pair geom1="RL" geom2="pyr_stair1"/>
+        <pair geom1="FR" geom2="pyr_stair1"/>
+        <pair geom1="FL" geom2="pyr_stair1"/>
+        <pair geom1="RR" geom2="pyr_stair2"/>
+        <pair geom1="RL" geom2="pyr_stair2"/>
+        <pair geom1="FR" geom2="pyr_stair2"/>
+        <pair geom1="FL" geom2="pyr_stair2"/>
+        <pair geom1="RR" geom2="pyr_stair3"/>
+        <pair geom1="RL" geom2="pyr_stair3"/>
+        <pair geom1="FR" geom2="pyr_stair3"/>
+        <pair geom1="FL" geom2="pyr_stair3"/>
+        <pair geom1="RR" geom2="pyr_stair4"/>
+        <pair geom1="RL" geom2="pyr_stair4"/>
+        <pair geom1="FR" geom2="pyr_stair4"/>
+        <pair geom1="FL" geom2="pyr_stair4"/>
+        <pair geom1="RR" geom2="pyr_stair5"/>
+        <pair geom1="RL" geom2="pyr_stair5"/>
+        <pair geom1="FR" geom2="pyr_stair5"/>
+        <pair geom1="FL" geom2="pyr_stair5"/>
+        <pair geom1="RR" geom2="pyr_stair6"/>
+        <pair geom1="RL" geom2="pyr_stair6"/>
+        <pair geom1="FR" geom2="pyr_stair6"/>
+        <pair geom1="FL" geom2="pyr_stair6"/>
+        <pair geom1="RR" geom2="landing_pyr"/>
+        <pair geom1="RL" geom2="landing_pyr"/>
+        <pair geom1="FR" geom2="landing_pyr"/>
+        <pair geom1="FL" geom2="landing_pyr"/>
+        <pair geom1="RR" geom2="stair_up_1"/>
+        <pair geom1="RL" geom2="stair_up_1"/>
+        <pair geom1="FR" geom2="stair_up_1"/>
+        <pair geom1="FL" geom2="stair_up_1"/>
+        <pair geom1="RR" geom2="stair_up_2"/>
+        <pair geom1="RL" geom2="stair_up_2"/>
+        <pair geom1="FR" geom2="stair_up_2"/>
+        <pair geom1="FL" geom2="stair_up_2"/>
+        <pair geom1="RR" geom2="stair_up_3"/>
+        <pair geom1="RL" geom2="stair_up_3"/>
+        <pair geom1="FR" geom2="stair_up_3"/>
+        <pair geom1="FL" geom2="stair_up_3"/>
+        <pair geom1="RR" geom2="stair_up_4"/>
+        <pair geom1="RL" geom2="stair_up_4"/>
+        <pair geom1="FR" geom2="stair_up_4"/>
+        <pair geom1="FL" geom2="stair_up_4"/>
+        <pair geom1="RR" geom2="stair_up_5"/>
+        <pair geom1="RL" geom2="stair_up_5"/>
+        <pair geom1="FR" geom2="stair_up_5"/>
+        <pair geom1="FL" geom2="stair_up_5"/>
+        <pair geom1="RR" geom2="landing_1"/>
+        <pair geom1="RL" geom2="landing_1"/>
+        <pair geom1="FR" geom2="landing_1"/>
+        <pair geom1="FL" geom2="landing_1"/>
+        <pair geom1="RR" geom2="landing_pyr_easy"/>
+        <pair geom1="RL" geom2="landing_pyr_easy"/>
+        <pair geom1="FR" geom2="landing_pyr_easy"/>
+        <pair geom1="FL" geom2="landing_pyr_easy"/>
+        <pair geom1="RR" geom2="stair_up_1_easy"/>
+        <pair geom1="RL" geom2="stair_up_1_easy"/>
+        <pair geom1="FR" geom2="stair_up_1_easy"/>
+        <pair geom1="FL" geom2="stair_up_1_easy"/>
+        <pair geom1="RR" geom2="stair_up_2_easy"/>
+        <pair geom1="RL" geom2="stair_up_2_easy"/>
+        <pair geom1="FR" geom2="stair_up_2_easy"/>
+        <pair geom1="FL" geom2="stair_up_2_easy"/>
+        <pair geom1="RR" geom2="stair_up_3_easy"/>
+        <pair geom1="RL" geom2="stair_up_3_easy"/>
+        <pair geom1="FR" geom2="stair_up_3_easy"/>
+        <pair geom1="FL" geom2="stair_up_3_easy"/>
+        <pair geom1="RR" geom2="stair_up_4_easy"/>
+        <pair geom1="RL" geom2="stair_up_4_easy"/>
+        <pair geom1="FR" geom2="stair_up_4_easy"/>
+        <pair geom1="FL" geom2="stair_up_4_easy"/>
+        <pair geom1="RR" geom2="stair_up_5_easy"/>
+        <pair geom1="RL" geom2="stair_up_5_easy"/>
+        <pair geom1="FR" geom2="stair_up_5_easy"/>
+        <pair geom1="FL" geom2="stair_up_5_easy"/>
+        <pair geom1="RR" geom2="landing_1_easy"/>
+        <pair geom1="RL" geom2="landing_1_easy"/>
+        <pair geom1="FR" geom2="landing_1_easy"/>
+        <pair geom1="FL" geom2="landing_1_easy"/>
+        <pair geom1="RR" geom2="landing_1_hard_fill"/>
+        <pair geom1="RL" geom2="landing_1_hard_fill"/>
+        <pair geom1="FR" geom2="landing_1_hard_fill"/>
+        <pair geom1="FL" geom2="landing_1_hard_fill"/>
+        <pair geom1="RR" geom2="ramp_up"/>
+        <pair geom1="RL" geom2="ramp_up"/>
+        <pair geom1="FR" geom2="ramp_up"/>
+        <pair geom1="FL" geom2="ramp_up"/>
+        <pair geom1="RR" geom2="mountain_course"/>
+        <pair geom1="RL" geom2="mountain_course"/>
+        <pair geom1="FR" geom2="mountain_course"/>
+        <pair geom1="FL" geom2="mountain_course"/>
+        <pair geom1="RR" geom2="landing_3"/>
+        <pair geom1="RL" geom2="landing_3"/>
+        <pair geom1="FR" geom2="landing_3"/>
+        <pair geom1="FL" geom2="landing_3"/>
+        <pair geom1="RR" geom2="gap_run_1"/>
+        <pair geom1="RL" geom2="gap_run_1"/>
+        <pair geom1="FR" geom2="gap_run_1"/>
+        <pair geom1="FL" geom2="gap_run_1"/>
+        <pair geom1="RR" geom2="gap1_bottom"/>
+        <pair geom1="RL" geom2="gap1_bottom"/>
+        <pair geom1="FR" geom2="gap1_bottom"/>
+        <pair geom1="FL" geom2="gap1_bottom"/>
+        <pair geom1="RR" geom2="gap1_wall_a"/>
+        <pair geom1="RL" geom2="gap1_wall_a"/>
+        <pair geom1="FR" geom2="gap1_wall_a"/>
+        <pair geom1="FL" geom2="gap1_wall_a"/>
+        <pair geom1="RR" geom2="gap1_wall_b"/>
+        <pair geom1="RL" geom2="gap1_wall_b"/>
+        <pair geom1="FR" geom2="gap1_wall_b"/>
+        <pair geom1="FL" geom2="gap1_wall_b"/>
+        <pair geom1="RR" geom2="gap_run_2"/>
+        <pair geom1="RL" geom2="gap_run_2"/>
+        <pair geom1="FR" geom2="gap_run_2"/>
+        <pair geom1="FL" geom2="gap_run_2"/>
+        <pair geom1="RR" geom2="gap2_bottom"/>
+        <pair geom1="RL" geom2="gap2_bottom"/>
+        <pair geom1="FR" geom2="gap2_bottom"/>
+        <pair geom1="FL" geom2="gap2_bottom"/>
+        <pair geom1="RR" geom2="gap2_wall_a"/>
+        <pair geom1="RL" geom2="gap2_wall_a"/>
+        <pair geom1="FR" geom2="gap2_wall_a"/>
+        <pair geom1="FL" geom2="gap2_wall_a"/>
+        <pair geom1="RR" geom2="gap2_wall_b"/>
+        <pair geom1="RL" geom2="gap2_wall_b"/>
+        <pair geom1="FR" geom2="gap2_wall_b"/>
+        <pair geom1="FL" geom2="gap2_wall_b"/>
+        <pair geom1="RR" geom2="gap_run_3"/>
+        <pair geom1="RL" geom2="gap_run_3"/>
+        <pair geom1="FR" geom2="gap_run_3"/>
+        <pair geom1="FL" geom2="gap_run_3"/>
+        <pair geom1="RR" geom2="gap3_bottom"/>
+        <pair geom1="RL" geom2="gap3_bottom"/>
+        <pair geom1="FR" geom2="gap3_bottom"/>
+        <pair geom1="FL" geom2="gap3_bottom"/>
+        <pair geom1="RR" geom2="gap3_wall_a"/>
+        <pair geom1="RL" geom2="gap3_wall_a"/>
+        <pair geom1="FR" geom2="gap3_wall_a"/>
+        <pair geom1="FL" geom2="gap3_wall_a"/>
+        <pair geom1="RR" geom2="gap3_wall_b"/>
+        <pair geom1="RL" geom2="gap3_wall_b"/>
+        <pair geom1="FR" geom2="gap3_wall_b"/>
+        <pair geom1="FL" geom2="gap3_wall_b"/>
+        <pair geom1="RR" geom2="gap_run_4"/>
+        <pair geom1="RL" geom2="gap_run_4"/>
+        <pair geom1="FR" geom2="gap_run_4"/>
+        <pair geom1="FL" geom2="gap_run_4"/>
+        <pair geom1="RR" geom2="gap4_bottom"/>
+        <pair geom1="RL" geom2="gap4_bottom"/>
+        <pair geom1="FR" geom2="gap4_bottom"/>
+        <pair geom1="FL" geom2="gap4_bottom"/>
+        <pair geom1="RR" geom2="gap4_wall_a"/>
+        <pair geom1="RL" geom2="gap4_wall_a"/>
+        <pair geom1="FR" geom2="gap4_wall_a"/>
+        <pair geom1="FL" geom2="gap4_wall_a"/>
+        <pair geom1="RR" geom2="gap4_wall_b"/>
+        <pair geom1="RL" geom2="gap4_wall_b"/>
+        <pair geom1="FR" geom2="gap4_wall_b"/>
+        <pair geom1="FL" geom2="gap4_wall_b"/>
+        <pair geom1="RR" geom2="gap_run_end"/>
+        <pair geom1="RL" geom2="gap_run_end"/>
+        <pair geom1="FR" geom2="gap_run_end"/>
+        <pair geom1="FL" geom2="gap_run_end"/>
+        <pair geom1="RR" geom2="stair_asc_1"/>
+        <pair geom1="RL" geom2="stair_asc_1"/>
+        <pair geom1="FR" geom2="stair_asc_1"/>
+        <pair geom1="FL" geom2="stair_asc_1"/>
+        <pair geom1="RR" geom2="stair_asc_2"/>
+        <pair geom1="RL" geom2="stair_asc_2"/>
+        <pair geom1="FR" geom2="stair_asc_2"/>
+        <pair geom1="FL" geom2="stair_asc_2"/>
+        <pair geom1="RR" geom2="stair_asc_3"/>
+        <pair geom1="RL" geom2="stair_asc_3"/>
+        <pair geom1="FR" geom2="stair_asc_3"/>
+        <pair geom1="FL" geom2="stair_asc_3"/>
+        <pair geom1="RR" geom2="stair_asc_4"/>
+        <pair geom1="RL" geom2="stair_asc_4"/>
+        <pair geom1="FR" geom2="stair_asc_4"/>
+        <pair geom1="FL" geom2="stair_asc_4"/>
+        <pair geom1="RR" geom2="stair_asc_5"/>
+        <pair geom1="RL" geom2="stair_asc_5"/>
+        <pair geom1="FR" geom2="stair_asc_5"/>
+        <pair geom1="FL" geom2="stair_asc_5"/>
+        <pair geom1="RR" geom2="landing_4"/>
+        <pair geom1="RL" geom2="landing_4"/>
+        <pair geom1="FR" geom2="landing_4"/>
+        <pair geom1="FL" geom2="landing_4"/>
+        <pair geom1="RR" geom2="stair_desc_1"/>
+        <pair geom1="RL" geom2="stair_desc_1"/>
+        <pair geom1="FR" geom2="stair_desc_1"/>
+        <pair geom1="FL" geom2="stair_desc_1"/>
+        <pair geom1="RR" geom2="stair_desc_2"/>
+        <pair geom1="RL" geom2="stair_desc_2"/>
+        <pair geom1="FR" geom2="stair_desc_2"/>
+        <pair geom1="FL" geom2="stair_desc_2"/>
+        <pair geom1="RR" geom2="stair_desc_3"/>
+        <pair geom1="RL" geom2="stair_desc_3"/>
+        <pair geom1="FR" geom2="stair_desc_3"/>
+        <pair geom1="FL" geom2="stair_desc_3"/>
+        <pair geom1="RR" geom2="stair_desc_4"/>
+        <pair geom1="RL" geom2="stair_desc_4"/>
+        <pair geom1="FR" geom2="stair_desc_4"/>
+        <pair geom1="FL" geom2="stair_desc_4"/>
+        <pair geom1="RR" geom2="stair_desc_5"/>
+        <pair geom1="RL" geom2="stair_desc_5"/>
+        <pair geom1="FR" geom2="stair_desc_5"/>
+        <pair geom1="FL" geom2="stair_desc_5"/>
+        <pair geom1="RR" geom2="stair_desc_6"/>
+        <pair geom1="RL" geom2="stair_desc_6"/>
+        <pair geom1="FR" geom2="stair_desc_6"/>
+        <pair geom1="FL" geom2="stair_desc_6"/>
+        <pair geom1="RR" geom2="stair_desc_7"/>
+        <pair geom1="RL" geom2="stair_desc_7"/>
+        <pair geom1="FR" geom2="stair_desc_7"/>
+        <pair geom1="FL" geom2="stair_desc_7"/>
+        <pair geom1="RR" geom2="stair_desc_8"/>
+        <pair geom1="RL" geom2="stair_desc_8"/>
+        <pair geom1="FR" geom2="stair_desc_8"/>
+        <pair geom1="FL" geom2="stair_desc_8"/>
+        <pair geom1="RR" geom2="landing_end"/>
+        <pair geom1="RL" geom2="landing_end"/>
+        <pair geom1="FR" geom2="landing_end"/>
+        <pair geom1="FL" geom2="landing_end"/>
+    </contact>
+</mujoco>

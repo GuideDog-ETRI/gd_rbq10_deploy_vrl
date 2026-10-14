@@ -58,16 +58,23 @@ def main():
     ap.add_argument("--pull-force", type=float, default=None, help="override the ascending pull force (N, before --scale)")
     ap.add_argument("--pull-seconds", type=float, default=None, help="override the ascending pull duration (s)")
     ap.add_argument("--ascend-x", type=float, default=None, help="override the ascending pull trigger x (m)")
+    ap.add_argument("--top-x", type=float, default=10.85, help="top-edge push trigger x (m)")
+    ap.add_argument("--descend-x", type=float, default=12.5, help="descending push trigger x (m)")
+    ap.add_argument("--plan-json", default=None,
+                    help='replace the whole schedule: [[name, trigger_x, N, deg_below_horizontal, seconds, x_sign], ...] '
+                         '(x_sign -1 = toward -x (pull back), +1 = toward +x (push forward))')
     ap.add_argument("--min-speed", type=float, default=0.1, help="fire only while the base moves forward faster (m/s)")
     ap.add_argument("--trigger-window", type=float, default=1.0, help="fire within this distance past a trigger (m)")
     args = ap.parse_args()
     # name, trigger x, force N, angle below horizontal (deg), seconds, downhill sign (+x is downhill when descending)
     plan = [("ascend_mid_pull", 7.5, 100.0, 30.0, 0.6, -1.0),
-            ("top_edge_push", 10.85, 80.0, 10.0, 0.3, +1.0),
-            ("descend_mid_push", 12.5, 80.0, 10.0, 0.3, +1.0)]
+            ("top_edge_push", args.top_x, 80.0, 10.0, 0.3, +1.0),
+            ("descend_mid_push", args.descend_x, 80.0, 10.0, 0.3, +1.0)]
     if args.pull_force is not None or args.pull_seconds is not None or args.ascend_x is not None:
         name, trig, force, angle, secs, sign = plan[0]  # e.g. a short hard yank: 350 N for 0.2 s
         plan[0] = (name, args.ascend_x or trig, args.pull_force or force, angle, args.pull_seconds or secs, sign)
+    if args.plan_json:
+        plan = [tuple(p) for p in json.loads(args.plan_json)]
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sent, start = [], time.time()
     pending = list(plan)
