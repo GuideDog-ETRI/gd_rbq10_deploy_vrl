@@ -8,6 +8,10 @@
 #include "VisionTopics.hpp"
 
 #include <sstream>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -153,16 +157,33 @@ VisionStudentThread::VisionStudentThread(const std::string& studentOnnxPath, int
             if (m_gastMode) {
                 const auto shape = [this](int i) {
                     return m_session->GetInputTypeInfo(i).GetTensorTypeAndShapeInfo().GetShape(); };
-                if (!shapeMatches(shape(0), {1, GastTerrainMemory::kInputs, GastTerrainMemory::kScan}) ||
+                const int width = shapeMatches(shape(0), {1, GastTerrainMemory::kInputs, GastTerrainMemory::kScanIr})
+                    ? GastTerrainMemory::kScanIr : GastTerrainMemory::kScan;
+                if (!shapeMatches(shape(0), {1, GastTerrainMemory::kInputs, width}) ||
                     !shapeMatches(shape(1), {1, GastTerrainMemory::kInputs, 3}) ||
                     !shapeMatches(shape(2), {1, 3}) || !shapeMatches(shape(3), {1, GastTerrainMemory::kInputs}) ||
                     !shapeMatches(latentShape, {1, kLatentDim})) {
-                    FILE_LOG_AS(logERROR, "RLWALK") << "GAST teacher encoder requires frames[1,8,374], poses[1,8,3], "
+                    FILE_LOG_AS(logERROR, "RLWALK") << "GAST teacher encoder requires frames[1,8,374|561], poses[1,8,3], "
                         "pose[1,3], ages[1,8] -> latent[1,32]";
                     return;
                 }
-                m_gastMemory = std::make_unique<GastTerrainMemory>();
-                FILE_LOG_AS(logINFO, "RLWALK") << "GAST teacher oracle: full height grid + 8-step memory (no cameras)";
+                const char* port = std::getenv("RBQ_GAST_SCAN_UDP");
+                if (port && *port) {
+                    m_scanSocket = ::socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0);
+                    sockaddr_in addr{}; addr.sin_family = AF_INET; addr.sin_port = htons(static_cast<uint16_t>(std::atoi(port)));
+                    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+                    if (m_scanSocket < 0 || ::bind(m_scanSocket, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
+                        FILE_LOG_AS(logERROR, "RLWALK") << "RBQ_GAST_SCAN_UDP bind failed on 127.0.0.1:" << port;
+                        return;
+                    }
+                } else if (width == GastTerrainMemory::kScanIr) {
+                    FILE_LOG_AS(logERROR, "RLWALK") << "Ray+IR GAST encoder (561-wide frames) needs RBQ_GAST_SCAN_UDP (sensor sidecar)";
+                    return;
+                }
+                m_gastMemory = std::make_unique<GastTerrainMemory>(width);
+                FILE_LOG_AS(logINFO, "RLWALK") << "GAST teacher: " << (m_scanSocket >= 0
+                    ? std::string("external sensor map on udp ") + port : std::string("oracle full height grid"))
+                    << " + 8-step memory, frame width " << width;
             } else if (!shapeMatches(scanShape, {1, 374}) || !shapeMatches(latentShape, {1, kLatentDim})) {
                 FILE_LOG_AS(logERROR, "RLWALK") << "CVTT teacher encoder requires scan[1,374] -> latent[1,32]";
                 return;
@@ -745,6 +766,24 @@ void VisionStudentThread::studentLoop(int updatePeriodMs) {
     }
 }
 
+// Packet (little endian): "GSC1", uint32 width (374 | 561), double stamp_ms (CLOCK_MONOTONIC like nowMs), float[width].
+bool VisionStudentThread::readExternalScan(int width) {
+    std::array<char, 16 + 4 * GastTerrainMemory::kScanIr> buf{};
+    bool got = false;
+    for (;;) {
+        const ssize_t n = ::recv(m_scanSocket, buf.data(), buf.size(), 0);
+        if (n < 0) break;
+        uint32_t w = 0; double stamp = 0;
+        std::memcpy(&w, buf.data() + 4, 4); std::memcpy(&stamp, buf.data() + 8, 8);
+        if (n != static_cast<ssize_t>(16 + 4 * w) || std::memcmp(buf.data(), "GSC1", 4) != 0 || static_cast<int>(w) != width) continue;
+        m_extScan.resize(width);
+        std::memcpy(m_extScan.data(), buf.data() + 16, 4 * width);
+        if (!std::all_of(m_extScan.begin(), m_extScan.end(), [](float v){ return std::isfinite(v); })) continue;
+        m_extStampMs = static_cast<int64_t>(stamp); ++m_extPackets; got = true;
+    }
+    return got || (!m_extScan.empty());
+}
+
 void VisionStudentThread::gastStep(const Ort::MemoryInfo& mem, int& tick) {
     TimedPose latest{};
     {
@@ -757,18 +796,29 @@ void VisionStudentThread::gastStep(const Ort::MemoryInfo& mem, int& tick) {
         !std::all_of(latest.pos.begin(), latest.pos.end(), [](float v){ return std::isfinite(v); }) ||
         !std::all_of(latest.quat.begin(), latest.quat.end(), [](float v){ return std::isfinite(v); })) return;
     try {
-        auto scan = m_teacherScan->observeFull({latest.pos, latest.quat});
-        // Simulation-only training-contract terrain noise (RBQ_SIM_OBS_NOISE=1, SimObsNoise.hpp).
-        if (SimObsNoise::instance().enabled()) SimObsNoise::instance().corruptTerrain(scan);
+        const int width = m_gastMemory->width();
+        GastTerrainMemory::Scan scan(width, 0.f);
+        if (m_scanSocket >= 0) {
+            // External sensor map: the sidecar already models sensor, transport and mapper; no extra terrain noise.
+            // A missing/stale map (> 300 ms) is an empty scan: exact zero latent, as a training blackout.
+            if (readExternalScan(width) && now - m_extStampMs <= 300) std::copy(m_extScan.begin(), m_extScan.end(), scan.begin());
+            else ++m_extStale;
+        } else {
+            auto full = m_teacherScan->observeFull({latest.pos, latest.quat});
+            // Simulation-only training-contract terrain noise (RBQ_SIM_OBS_NOISE=1, SimObsNoise.hpp).
+            if (SimObsNoise::instance().enabled()) SimObsNoise::instance().corruptTerrain(full);
+            std::copy(full.begin(), full.end(), scan.begin());
+        }
         const auto& q = latest.quat;  // wxyz
         const float yaw = std::atan2(2 * (q[0]*q[3] + q[1]*q[2]), 1 - 2 * (q[2]*q[2] + q[3]*q[3]));
         auto in = m_gastMemory->step(latest.stampMs, scan, {latest.pos[0], latest.pos[1], yaw});
-        const int valid = std::count(scan.begin() + TerrainScan::kPoints, scan.end(), 1.f);
+        const int valid = std::count(scan.begin() + TerrainScan::kPoints, scan.begin() + 2 * TerrainScan::kPoints, 1.f);
         if (tick++ % 200 == 0)
-            FILE_LOG_AS(logINFO, "RLWALK") << "GAST teacher scan valid=" << valid << "/187 memory="
+            FILE_LOG_AS(logINFO, "RLWALK") << "GAST teacher scan valid=" << valid << "/187 ext_packets=" << m_extPackets
+                << " ext_stale_ticks=" << m_extStale << " memory="
                 << m_gastMemory->size() << " oldest_age=" << in.ages[0] << " pose_age_ms=" << now - latest.stampMs
                 << " sim_obs_noise=" << SimObsNoise::instance().enabled() << " blackout_steps=" << SimObsNoise::instance().blackoutSteps();
-        const std::array<int64_t, 3> framesShape{1, GastTerrainMemory::kInputs, GastTerrainMemory::kScan};
+        const std::array<int64_t, 3> framesShape{1, GastTerrainMemory::kInputs, width};
         const std::array<int64_t, 3> posesShape{1, GastTerrainMemory::kInputs, 3};
         const std::array<int64_t, 2> poseShape{1, 3}, agesShape{1, GastTerrainMemory::kInputs};
         std::array<Ort::Value, 4> inputs{

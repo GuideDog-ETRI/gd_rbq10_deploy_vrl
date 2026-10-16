@@ -141,6 +141,12 @@ private:
     bool m_gastMode = false;     // GAST teacher oracle (full grid + memory)
     bool m_gastStudent = false;  // GAST student (capture-pose contract)
     std::unique_ptr<GastTerrainMemory> m_gastMemory;  // student-loop thread only
+    // Simulation-only external sensor map for the GAST teacher (RBQ_GAST_SCAN_UDP=<port>, sensor_sidecar):
+    // LiDAR / LiDAR+IR / depth+IR maps replace the course ground truth. Latest packet wins.
+    int m_scanSocket = -1;
+    std::vector<float> m_extScan;
+    int64_t m_extStampMs = 0, m_extPackets = 0, m_extStale = 0;
+    bool readExternalScan(int width);
     std::array<float, 7> m_capturePose{};
     void gastStep(const Ort::MemoryInfo& mem, int& tick);
     std::unique_ptr<rbq_sdk::Subscriber<rbq_msgs::msg::dds_::SimInfo_>> m_simPoseSub;

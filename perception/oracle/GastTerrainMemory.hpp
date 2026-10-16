@@ -5,32 +5,40 @@
 // encoder input takes slots HISTORY_OFFSETS = (48,32,16,8,4,2,1,0) with their capture poses and
 // ages, and the current scan in the last slot. The ego-motion warp runs inside gast_encoder.onnx.
 // Empty slots: zero scan, current pose, age 5 s (as an unfilled training slot after reset).
+// Frame width: 374 = [h*5 (187), valid (187)] (GAST v2.1) or 561 = + IR (187) for the Ray+IR teachers fed by an
+// external sensor map (RBQ_GAST_SCAN_UDP, simulation/mujoco/sensor_sidecar).
 
 #include <algorithm>
 #include <array>
 #include <cstdint>
 #include <deque>
+#include <stdexcept>
+#include <vector>
 
 class GastTerrainMemory {
 public:
-    static constexpr int kSlots = 49, kInputs = 8, kScan = 374;
+    static constexpr int kSlots = 49, kInputs = 8, kScan = 374, kScanIr = 561;
     static constexpr std::array<int, kInputs> kOffsets{48, 32, 16, 8, 4, 2, 1, 0};
-    using Scan = std::array<float, kScan>;
+    using Scan = std::vector<float>;    // width() values
     using Pose = std::array<float, 3>;  // world x, y, yaw
 
     struct Inputs {
-        std::array<float, kInputs * kScan> frames{};
+        std::vector<float> frames;      // kInputs * width()
         std::array<float, kInputs * 3> poses{};
         Pose pose{};
         std::array<float, kInputs> ages{};
     };
 
-    explicit GastTerrainMemory(int64_t capturePeriodMs = 100) : m_periodMs(capturePeriodMs) {}
+    explicit GastTerrainMemory(int width = kScan, int64_t capturePeriodMs = 100) : m_width(width), m_periodMs(capturePeriodMs) {
+        if (width != kScan && width != kScanIr) throw std::invalid_argument("GAST frame width must be 374 or 561");
+    }
+    int width() const { return m_width; }
 
     void reset() { m_ring.clear(); m_haveCapture = false; }
 
     // One encoder step at monotonic time nowMs; captures first when 100 ms have elapsed.
     Inputs step(int64_t nowMs, const Scan& scan, const Pose& pose) {
+        if (static_cast<int>(scan.size()) != m_width) throw std::invalid_argument("GAST scan width mismatch");
         // Fixed 100 ms schedule like the training step counter; resynchronize after a stall.
         if (!m_haveCapture || nowMs - m_nextCaptureMs >= 0) {
             m_ring.push_front({scan, pose, nowMs});
@@ -40,13 +48,14 @@ public:
             m_haveCapture = true;
         }
         Inputs in;
+        in.frames.assign(static_cast<size_t>(kInputs) * m_width, 0.f);
         in.pose = pose;
         for (int slot = 0; slot < kInputs; ++slot) {
             const int offset = kOffsets[slot];
             float* poseOut = in.poses.data() + slot * 3;
             if (offset < static_cast<int>(m_ring.size())) {
                 const Entry& e = m_ring[offset];
-                std::copy(e.scan.begin(), e.scan.end(), in.frames.begin() + slot * kScan);
+                std::copy(e.scan.begin(), e.scan.end(), in.frames.begin() + slot * m_width);
                 std::copy(e.pose.begin(), e.pose.end(), poseOut);
                 in.ages[slot] = std::clamp((nowMs - e.stampMs) / 1000.f, 0.f, 5.f);
             } else {
@@ -54,7 +63,7 @@ public:
                 in.ages[slot] = 5.f;
             }
         }
-        std::copy(scan.begin(), scan.end(), in.frames.begin() + (kInputs - 1) * kScan);
+        std::copy(scan.begin(), scan.end(), in.frames.begin() + (kInputs - 1) * m_width);
         std::copy(pose.begin(), pose.end(), in.poses.begin() + (kInputs - 1) * 3);
         in.ages[kInputs - 1] = 0.f;
         return in;
@@ -65,6 +74,7 @@ public:
 private:
     struct Entry { Scan scan; Pose pose; int64_t stampMs; };
     std::deque<Entry> m_ring;
+    int m_width;
     int64_t m_periodMs, m_nextCaptureMs = 0;
     bool m_haveCapture = false;
 };

@@ -33,11 +33,24 @@ mujoco_window() {
   echo "${w:-0x200007}"
 }
 
+vision_window() {  # the BT0..3 Depth / IR student-input viewer (tools/vision-viewer), empty when not open
+  xwininfo -display :2 -root -tree 2>/dev/null | grep '"Terrain diagnostic - BT0..3 Depth / IR' | awk '{print $1}' | head -1
+}
+
 # record <out_dir> : follow camera on, start video + 150 Hz state probe (REC/PROBE pids)
 record_start() {
   local out=$1 secs=$2 w; w=$(mujoco_window)
   "$XTKEY" :2 "$w" bracketright; sleep 1
-  gst-launch-1.0 -e ximagesrc display-name=:2 xid=$((w)) use-damage=false ! video/x-raw,framerate=15/1 ! videoconvert ! videoscale ! video/x-raw,width=1258,height=480 ! vp8enc deadline=1 target-bitrate=3000000 ! webmmux ! filesink location="$out/walk.webm" > "$out/record.log" 2>&1 &
+  local v; v=$(vision_window)
+  if [ "${REC_VISION:-1}" = 1 ] && [ -n "$v" ]; then
+    # MuJoCo (left, 1258x480) + the BT0..3 Depth / IR diagnostic window (right, 640x480, letterboxed) in one video.
+    gst-launch-1.0 -e compositor name=mix sink_1::xpos=1258 ! video/x-raw,width=1898,height=480 ! videoconvert ! vp8enc deadline=1 target-bitrate=4000000 ! webmmux ! filesink location="$out/walk.webm" \
+      ximagesrc display-name=:2 xid=$((w)) use-damage=false ! video/x-raw,framerate=15/1 ! videoconvert ! videoscale ! video/x-raw,width=1258,height=480 ! mix.sink_0 \
+      ximagesrc display-name=:2 xid=$((v)) use-damage=false ! video/x-raw,framerate=15/1 ! videoconvert ! videoscale add-borders=true ! video/x-raw,width=640,height=480 ! mix.sink_1 \
+      > "$out/record.log" 2>&1 &
+  else
+    gst-launch-1.0 -e ximagesrc display-name=:2 xid=$((w)) use-damage=false ! video/x-raw,framerate=15/1 ! videoconvert ! videoscale ! video/x-raw,width=1258,height=480 ! vp8enc deadline=1 target-bitrate=3000000 ! webmmux ! filesink location="$out/walk.webm" > "$out/record.log" 2>&1 &
+  fi
   REC=$!
   "$REPO/build/tools/sim-state-probe" "$secs" > "$out/state.jsonl" 2> "$out/state.err" &
   PROBE=$!

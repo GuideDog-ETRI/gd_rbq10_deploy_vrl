@@ -8,8 +8,10 @@
 #include <thread>
 
 int main(int argc,char**argv) {
-    if(argc!=2)return 2;
-    int seconds=std::stoi(argv[1]);if(seconds<1||seconds>600)return 2;
+    // sim-state-probe <seconds> [period_ms=100]; the sensor sidecar uses 10 ms (one line per policy tick).
+    if(argc!=2&&argc!=3)return 2;
+    int seconds=std::stoi(argv[1]);if(seconds<1||seconds>3600)return 2;
+    int period=argc==3?std::stoi(argv[2]):100;if(period<1||period>1000)return 2;
     rbq_sdk::ChannelFactory::Instance().Init(0,"lo");
     using Msg=rbq_msgs::msg::dds_::SimInfo_;
     std::mutex mutex; Msg state; long count=0;
@@ -24,8 +26,10 @@ int main(int argc,char**argv) {
             std::cout<<"{\"wall\":"<<wall()<<",\"received\":"<<received<<",\"count\":"<<count
                      <<",\"pos\":["<<p[0]<<","<<p[1]<<","<<p[2]<<"],\"quat\":["<<q[0]<<","<<q[1]<<","<<q[2]<<","<<q[3]<<"],\"imu_xyzw\":["<<imu.x()<<","<<imu.y()<<","<<imu.z()<<","<<imu.w()<<"],\"rpy\":["<<r[0]<<","<<r[1]<<","<<r[2]<<"],\"rot\":["<<rot[0]<<","<<rot[1]<<","<<rot[2]<<","<<rot[3]<<","<<rot[4]<<","<<rot[5]<<","<<rot[6]<<","<<rot[7]<<","<<rot[8]<<"],\"vel\":["<<v[0]<<","<<v[1]<<","<<v[2]<<"],\"foot_fz\":[";
             for(int i=0;i<4;++i){if(i)std::cout<<",";std::cout<<state.leg_contact()[i].force()[2];}
+            std::cout<<"],\"q\":[";  // leg joint0..11 (HR, HL, FR, FL x roll/hip/knee), for sensor self-occlusion
+            for(int i=0;i<12;++i){if(i)std::cout<<",";std::cout<<state.leg_joint()[i].pos();}
             std::cout<<"]}"<<std::endl;
         }}
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        std::this_thread::sleep_for(std::chrono::milliseconds(period));
     }
 }
