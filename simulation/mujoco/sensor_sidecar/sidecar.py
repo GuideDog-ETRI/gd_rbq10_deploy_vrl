@@ -23,6 +23,8 @@ Per probe line (10 ms; pose, IMU orientation, 12 leg joints):
     uint32 seq, float sample x, y, z, yaw (the pose the grid was sampled at), float[width].
   * --map gt (diagnostic arm D): the sensor pipeline still runs on the same schedule, but the height/valid part of
     each packet is replaced by the course ground truth at the same sample pose (full valid, TerrainScan encoding).
+  * --map s_landing (diagnostic, privileged GT): the sensor map, except valid cells on real ground within 10 cm beyond
+    a pit's far (landing) edge that the map shows > 0.30 m too deep get the GT height (UPDATE142/143 S-landing edit).
   * --payload FILE: every sent packet as uint32 seq, double stamp_ms, float[width] (binary, for offline replay).
 Pilot drops a map older than 300 ms (empty scan -> zero latent). Nothing here sees gap labels.
 """
@@ -185,8 +187,25 @@ class Sidecar:
         gx, gy = np.meshgrid((np.arange(17) - 8) * .1, (np.arange(11) - 5) * .1)
         self.grid = np.stack((gx.ravel(), gy.ravel()), -1)
         self.gt = getattr(a, "map", "sensor") == "gt"
+        self.s_landing = getattr(a, "map", "sensor") == "s_landing"
+        pits = self.hi[:, 2] < -.3                       # gap bottoms (box top below -0.3 m on this course)
+        self.pit_far = np.unique(np.round(self.hi[pits, 0], 4))
+        self.edits = 0
         self.payload = open(a.payload, "wb") if getattr(a, "payload", None) else None
         self.seq = 0
+
+    def landing_fix(self, packed, pos, yaw):
+        """S-landing diagnostic: GT height on false-gap cells of real ground just beyond a pit's far edge."""
+        cy, sy = math.cos(yaw), math.sin(yaw)
+        xy = pos[:2] + self.grid @ np.array([[cy, sy], [-sy, cy]])
+        gz = surface(self.lo, self.hi, xy)
+        ground = np.isfinite(gz) & (gz > -.3)
+        gh = np.where(ground, 5 * np.clip(pos[2] - gz - .5, -1, 1), 0.)
+        band = ((xy[:, None, 0] >= self.pit_far[None] - 1e-6) & (xy[:, None, 0] <= self.pit_far[None] + .10)).any(1)
+        fix = (packed[CELLS:2 * CELLS] > 0) & ground & band & ((packed[:CELLS] - gh) / 5 > .30)
+        packed[:CELLS][fix] = gh[fix]
+        self.edits += int(fix.sum())
+        return int(fix.sum())
 
     def gt_grid(self, pos, yaw):
         """Course ground truth at the sample pose: [h*5 (187), valid (187)], h = 5*clip(base_z - surface - 0.5)."""
@@ -356,8 +375,11 @@ class Sidecar:
         t0 = time.perf_counter()
         with self.lock:
             packed = self.maps.sample(np.array([[pos[0], pos[1], yaw]]), np.array([pos[2]]), now)[0].astype(np.float32)
+        edits = 0
         if self.gt:  # arm D: same schedule and cost, ground-truth height/valid at the same sample pose
             packed[:2 * CELLS] = self.gt_grid(pos, yaw)
+        elif self.s_landing:
+            edits = self.landing_fix(packed, pos, yaw)
         if self.ir:
             packed = np.r_[packed, self.cell_ir(pos, Rb, q, yaw, packed[CELLS:2 * CELLS] > 0)]
         self.stats["sample_ms"].append(1000 * (time.perf_counter() - t0))
@@ -369,7 +391,7 @@ class Sidecar:
         self.stats["sent"] += 1
         self.trace(ev="send", seq=self.seq, stamp=now, sent_wall=time.time(), x=float(pos[0]), y=float(pos[1]), z=float(pos[2]), yaw=yaw,
                    last_capture=self.last_cid, last_capture_mono=self.last_delivered,
-                   valid=int((packed[CELLS:2 * CELLS] > 0).sum()), **src)
+                   valid=int((packed[CELLS:2 * CELLS] > 0).sum()), edits=edits, **src)
         if self.log and self.stats["lines"] % 50 == 0:
             cm, sm = self.stats["capture_ms"][-20:], self.stats["sample_ms"][-50:]
             self.log.write(json.dumps(dict(t=now, x=float(pos[0]), valid=int((packed[CELLS:2 * CELLS] > 0).sum()),
@@ -390,7 +412,8 @@ def main():
     ap.add_argument("--cam_w", type=int, default=160); ap.add_argument("--cam_h", type=int, default=90)  # E1 cam130 size
     ap.add_argument("--log", default=None)
     ap.add_argument("--trace", default=None, help="per-event timing/pose JSONL (capture, integrate, send)")
-    ap.add_argument("--map", choices=("sensor", "gt"), default="sensor", help="gt = diagnostic arm D (see above)")
+    ap.add_argument("--map", choices=("sensor", "gt", "s_landing"), default="sensor",
+                    help="gt = diagnostic arm D, s_landing = S with landing-edge false gaps set to GT (see above)")
     ap.add_argument("--payload", default=None, help="binary record of every sent packet")
     a = ap.parse_args()
     if not a.xml:
