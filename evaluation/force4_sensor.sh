@@ -1,6 +1,6 @@
 #!/bin/bash
 # force4_sensor.sh -- force4 once with the GAST teacher fed by the MuJoCo sensor sidecar instead of the course ground truth.
-#   MODE=lidar|lidar_ir|depth_ir MODEL=gast2769_26123 LAUNCHER=<bundle run_sim.sh> OUT_DIR=... evaluation/force4_sensor.sh
+#   MODE=lidar|lidar_ir|depth_ir MODEL=d_v3.6.21_b1_18_2769 LAUNCHER=<bundle run_sim.sh> OUT_DIR=... evaluation/force4_sensor.sh
 # lidar     : front LiDAR -> v25or map, IR = 0           (bundle with the 374-wide encoder)
 # lidar_ir  : front LiDAR -> v25or map + camera IR proxy  (bundle exported with --ir_input, 561-wide)
 # depth_ir  : 4 belly cameras depth -> camfilter136 -> v25or map + IR proxy (561-wide bundle)
@@ -20,6 +20,6 @@ SIDE=$!
 sleep 3
 TAG_EXTRA="_${MODE}" MODEL="$MODEL" LAUNCHER="$LAUNCHER" OUT_DIR="$OUT_DIR" bash "$here/force4.sh"; rc=$?
 kill -TERM -- -$SIDE 2>/dev/null; sleep 1; kill -KILL -- -$SIDE 2>/dev/null
-last=$(ls -dt "$OUT_DIR"/*"_${MODE}"* 2>/dev/null | grep -v '\.log$' | head -1)
-[ -d "$last" ] && mv "$log" "$last/sidecar.jsonl"
+last=$(ls -dt "$OUT_DIR"/*"_${MODE}"*/ 2>/dev/null | head -1)   # run directories only (the sidecar log matches too)
+[ -d "$last" ] && mv "$log" "$last/sidecar.jsonl" && mv "$OUT_DIR/sidecar_$MODE.out" "$last/sidecar.out"
 exit $rc
