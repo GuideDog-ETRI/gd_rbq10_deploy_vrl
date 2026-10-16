@@ -272,8 +272,17 @@ class Sidecar:
         return np.where(keep, IR_FLOOR + (1 - IR_FLOOR) * inten, 0.).astype(np.float32)
 
     # -- loop: the main thread samples every probe line; a worker captures every 100 ms --
+    def trace(self, **kw):
+        """--trace: one JSON line per capture / integrate / send (UPDATE140 timing and pose record).
+        Monotonic times (pose_mono, start, end, eligible, at, stamp) share one clock; *_wall are time.time();
+        src_wall/src_count are the probe row the pose came from. mono_wall_offset in the first line aligns them."""
+        if self.trace_f:
+            with self.trace_lock:
+                self.trace_f.write(json.dumps(kw) + "\n")
+
     def start_worker(self):
-        self.lock = threading.Lock(); self.latest = None; self.state_cv = threading.Condition()
+        self.lock = threading.Lock(); self.latest = None; self.latest_src = {}; self.state_cv = threading.Condition()
+        self.last_cid = None
         threading.Thread(target=self.capture_loop, daemon=True).start()
 
     def capture_loop(self):
@@ -281,6 +290,7 @@ class Sidecar:
             with self.state_cv:
                 self.state_cv.wait_for(lambda: self.latest is not None)
                 row_time, pos, quat, Rb, q = self.latest
+                src = self.latest_src
             now = time.monotonic()
             if self.next_capture is None:
                 self.next_capture = now
@@ -292,10 +302,15 @@ class Sidecar:
                 self.lidar_packet(pos, quat, Rb, q, row_time)
             done = time.monotonic()
             self.stats["capture_ms"].append(1000 * (time.perf_counter() - t0)); self.stats["captures"] += 1
-            if self.rng.random() < .05:
+            cid = self.stats["captures"]; drop = self.rng.random() < .05
+            eligible = None
+            if drop:
                 self.stats["dropped"] += 1
             else:  # delivered after the transport delay, never before the computation finished
-                self.queue.append((max(row_time + .01 * self.rng.integers(0, 16), done), row_time, packet))
+                eligible = max(row_time + .01 * self.rng.integers(0, 16), done)
+                self.queue.append((eligible, row_time, packet, cid))
+            self.trace(ev="capture", id=cid, pose_mono=row_time, start=now, end=done, eligible=eligible, dropped=drop,
+                       x=float(pos[0]), y=float(pos[1]), z=float(pos[2]), **src)
             late = now - self.next_capture
             self.next_capture = now + .1 if late >= .1 else self.next_capture + .1
             self.stats["late_captures"] = self.stats.get("late_captures", 0) + int(late >= .1)
@@ -310,7 +325,8 @@ class Sidecar:
             t0 = time.perf_counter()
             with self.lock:
                 self.maps.integrate([0], item[2], item[1], now)
-            self.last_delivered = item[1]; self.stats["delivered"] += 1
+            self.last_delivered = item[1]; self.last_cid = item[3]; self.stats["delivered"] += 1
+            self.trace(ev="integrate", id=item[3], pose_mono=item[1], eligible=item[0], at=time.monotonic())
             self.stats.setdefault("integrate_ms", []).append(1000 * (time.perf_counter() - t0))
 
     def step(self, row):
@@ -320,8 +336,9 @@ class Sidecar:
         Rb = rotation(quat[None])[0]; q = np.array(row.get("q") or [0.] * 12, float)
         yaw = math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
         self.stats["lines"] += 1
+        src = dict(src_wall=row.get("wall"), src_count=row.get("count"), recv_wall=time.time())
         with self.state_cv:
-            self.latest = (now, pos, quat, Rb, q); self.state_cv.notify()
+            self.latest = (now, pos, quat, Rb, q); self.latest_src = src; self.state_cv.notify()
         t0 = time.perf_counter()
         with self.lock:
             packed = self.maps.sample(np.array([[pos[0], pos[1], yaw]]), np.array([pos[2]]), now)[0].astype(np.float32)
@@ -330,6 +347,9 @@ class Sidecar:
         self.stats["sample_ms"].append(1000 * (time.perf_counter() - t0))
         self.sock.sendto(b"GSC1" + struct.pack("<Id", len(packed), now * 1000.) + packed.tobytes(), self.addr)
         self.stats["sent"] += 1
+        self.trace(ev="send", stamp=now, sent_wall=time.time(), x=float(pos[0]), y=float(pos[1]), z=float(pos[2]), yaw=yaw,
+                   last_capture=self.last_cid, last_capture_mono=self.last_delivered,
+                   valid=int((packed[CELLS:2 * CELLS] > 0).sum()), **src)
         if self.log and self.stats["lines"] % 50 == 0:
             cm, sm = self.stats["capture_ms"][-20:], self.stats["sample_ms"][-50:]
             self.log.write(json.dumps(dict(t=now, x=float(pos[0]), valid=int((packed[CELLS:2 * CELLS] > 0).sum()),
@@ -349,10 +369,13 @@ def main():
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--cam_w", type=int, default=160); ap.add_argument("--cam_h", type=int, default=90)  # E1 cam130 size
     ap.add_argument("--log", default=None)
+    ap.add_argument("--trace", default=None, help="per-event timing/pose JSONL (capture, integrate, send)")
     a = ap.parse_args()
     if not a.xml:
         raise SystemExit("--xml or RBQ_CVTT_TERRAIN_XML required")
     car = Sidecar(a)
+    car.trace_lock = threading.Lock(); car.trace_f = open(a.trace, "w", buffering=1) if a.trace else None
+    car.trace(ev="start", mono_wall_offset=time.time() - time.monotonic(), mode=a.mode, seed=a.seed)
     car.start_worker()
     print(f"[sidecar] mode={a.mode} boxes={len(car.lo)} udp=127.0.0.1:{a.port} train_root={TRAIN}", flush=True)
     for line in sys.stdin:
