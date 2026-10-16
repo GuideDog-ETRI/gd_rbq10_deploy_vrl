@@ -8,6 +8,7 @@
 #   ARM=E  as C, but landing-edge false-gap cells (real ground <= 10 cm beyond a far edge) get the GT height (diagnostic)
 # C / D also record <run>/sidecar_trace.jsonl, sidecar_payload.bin (every sent packet) and pilot_scan.log
 # (RBQ_GAST_SCAN_LOG: the packet seq / sample pose Pilot actually used at each GAST step, with its own pose).
+# RAW=1 (C/D/E): also sidecar_raw.bin (lossless captures + map operations, CPU replay) and mapper_provenance.jsonl.
 #   ARM=A SEED=42 MODEL=dwb38000_3906 LAUNCHER=scripts/gast/teacher/gast_rayir_3906/run_sim.sh OUT_DIR=... evaluation/gapprefix.sh
 # SEED feeds RBQ_SIM_OBS_NOISE_SEED (proprio stream; terrain stream seed+1) and, for C, the sidecar --seed.
 set -u
@@ -23,13 +24,14 @@ run="$OUT_DIR/$tag"; mkdir -p "$OUT_DIR/videos"
 SIDE=
 if [ "$ARM" = C ] || [ "$ARM" = D ] || [ "$ARM" = E ]; then
   MAP=$(case $ARM in D) echo gt ;; E) echo s_landing ;; *) echo sensor ;; esac)
+  RAWARGS=$([ "${RAW:-0}" = 1 ] && echo "--raw '$run/sidecar_raw.bin' --provenance '$run/mapper_provenance.jsonl'")
   export RBQ_GAST_SCAN_UDP=${RBQ_GAST_SCAN_UDP:-47610} RBQ_GAST_SCAN_LOG="$run/pilot_scan.log"
   SIF=${GD_LAB_SIF:-/home/user/workspace/gd_lab_isaaclab.sif}; PY=${GD_LAB_PYTHON:-/home/user/workspace/venv_apptainer/bin/python}
   mkdir -p "$run"
   setsid bash -c "'$REPO/build/tools/sim-state-probe' 3600 10 | apptainer exec '$SIF' env CUDA_VISIBLE_DEVICES='' OMP_NUM_THREADS=4 \
     '$PY' '$REPO/simulation/mujoco/sensor_sidecar/sidecar.py' --mode lidar --seed $SEED --xml '$REPO/simulation/terrains/gap_stairs_force4/environment.xml' \
     --port $RBQ_GAST_SCAN_UDP --log '$run/sidecar.jsonl' --trace '$run/sidecar_trace.jsonl' \
-    --map $MAP --payload '$run/sidecar_payload.bin'" > "$run/sidecar.out" 2>&1 &
+    --map $MAP --payload '$run/sidecar_payload.bin' $RAWARGS" > "$run/sidecar.out" 2>&1 &
   SIDE=$!; sleep 3
 fi
 printf '{"arm":"%s","seed":%s,"model":"%s","launcher":"%s","terrain_noise":%s,"proprio_noise":1,"finish_x":12.0,"forces":[]}\n' \
@@ -37,7 +39,11 @@ printf '{"arm":"%s","seed":%s,"model":"%s","launcher":"%s","terrain_noise":%s,"p
 echo "[gapprefix] $tag"
 PULL_ARGS="--plan-json []" bash "$EVAL_DIR/stair_push.sh" "$run" "$VX" 1.0 "$WALK_S" -- "$LAUNCHER" force4
 mv "$OUT_DIR/.manifest_$$" "$run/manifest.json" 2>/dev/null
-[ -n "$SIDE" ] && { kill -TERM -- -$SIDE 2>/dev/null; sleep 1; kill -KILL -- -$SIDE 2>/dev/null; }
+if [ -n "$SIDE" ]; then  # stop the probe first: the sidecar sees EOF, joins its worker and closes raw/payload files
+  pkill -TERM -s $SIDE -x sim-state-probe 2>/dev/null
+  for i in $(seq 1 60); do kill -0 $SIDE 2>/dev/null || break; sleep 1; done
+  kill -TERM -- -$SIDE 2>/dev/null; sleep 1; kill -KILL -- -$SIDE 2>/dev/null
+fi
 ev=$(python3 "$here/force4_classify.py" --finish-x 12.0 "$run/state.jsonl" | awk '{print $2}')
 [ -f "$run/walk.mp4" ] && cp "$run/walk.mp4" "$OUT_DIR/videos/${tag}_${ev}.mp4"
 echo "[gapprefix] $ev"

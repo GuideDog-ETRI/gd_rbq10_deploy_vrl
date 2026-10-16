@@ -39,7 +39,8 @@ for key, value in {"U130_DUAL": "2", "U130_DDEEP": "0.7", "U127_SENSOR_COUNT": "
     if os.environ.get(key, value) != value:
         raise SystemExit(f"{key} must be {value} (v25or), got {os.environ[key]}")
     os.environ[key] = value
-sys.path[:0] = [str(TRAIN / "tools/rl_replay"), str(TRAIN / "src")]
+sys.path[:0] = [str(HERE), str(TRAIN / "tools/rl_replay"), str(TRAIN / "src")]
+from provenance145 import JsonSink, RawWriter
 import lidar126, structure130                       # noqa: E402  (E1 mapper, unchanged)
 from heightmap116 import R as NOISE, rotation       # noqa: E402
 from camfilter136 import reject_outliers            # noqa: E402
@@ -169,7 +170,16 @@ class Sidecar:
     def __init__(self, a):
         self.mode, self.ir = a.mode, a.mode.endswith("_ir")
         self.lo, self.hi = load_boxes(a.xml)
-        self.maps = lidar126.Maps(1, "L0S")
+        self.provenance = JsonSink(a.provenance, a.provenance_max_mb * 1024**2) if getattr(a, "provenance", None) else None
+        self.maps = lidar126.Maps(1, "L0S", provenance=self.provenance)
+        self.raw = None
+        if getattr(a, "raw", None):
+            import hashlib
+            import heightmap116, heightmap119z
+            modules = [lidar126, structure130, heightmap116, heightmap119z]
+            self.raw = RawWriter(a.raw, dict(version=1, mode=a.mode, map=a.map, seed=a.seed,
+                mapper_config=structure130.S, noise_config=repr(NOISE), sensor_count=lidar126.SENSOR_COUNT,
+                sources={m.__name__:dict(path=m.__file__, sha256=hashlib.sha256(Path(m.__file__).read_bytes()).hexdigest()) for m in modules}), a.raw_max_mb * 1024**2)
         self.rng = np.random.default_rng(a.seed)              # capture worker only
         self.rng_ir = np.random.default_rng(a.seed + 1)       # main thread (IR proxy)
         self.materials = Materials(a.seed * 7919 + 136)
@@ -314,14 +324,17 @@ class Sidecar:
                 self.trace_f.write(json.dumps(kw) + "\n")
 
     def start_worker(self):
+        self.stop_worker = threading.Event()
         self.lock = threading.Lock(); self.latest = None; self.latest_src = {}; self.state_cv = threading.Condition()
         self.last_cid = None
-        threading.Thread(target=self.capture_loop, daemon=True).start()
+        self.worker = threading.Thread(target=self.capture_loop, daemon=True)
+        self.worker.start()
 
     def capture_loop(self):
-        while True:
+        while not self.stop_worker.is_set():
             with self.state_cv:
-                self.state_cv.wait_for(lambda: self.latest is not None)
+                self.state_cv.wait_for(lambda: self.latest is not None or self.stop_worker.is_set())
+                if self.stop_worker.is_set(): return
                 row_time, pos, quat, Rb, q = self.latest
                 src = self.latest_src
             now = time.monotonic()
@@ -342,6 +355,8 @@ class Sidecar:
             else:  # delivered after the transport delay, never before the computation finished
                 eligible = max(row_time + .01 * self.rng.integers(0, 16), done)
                 self.queue.append((eligible, row_time, packet, cid))
+            if self.raw:
+                self.raw.write("capture", dict(id=cid, pose_mono=row_time, start=now, end=done, eligible=eligible, dropped=drop, **src), packet)
             self.trace(ev="capture", id=cid, pose_mono=row_time, start=now, end=done, eligible=eligible, dropped=drop,
                        x=float(pos[0]), y=float(pos[1]), z=float(pos[2]), **src)
             late = now - self.next_capture
@@ -357,7 +372,9 @@ class Sidecar:
                 continue                                                    # older than the last delivered capture
             t0 = time.perf_counter()
             with self.lock:
+                self.maps.provenance_context = dict(capture_id=item[3])
                 self.maps.integrate([0], item[2], item[1], now)
+                if self.raw: self.raw.write("integrate", dict(id=item[3], stamp=item[1], now=now))
             self.last_delivered = item[1]; self.last_cid = item[3]; self.stats["delivered"] += 1
             self.trace(ev="integrate", id=item[3], pose_mono=item[1], eligible=item[0], at=time.monotonic())
             self.stats.setdefault("integrate_ms", []).append(1000 * (time.perf_counter() - t0))
@@ -374,7 +391,11 @@ class Sidecar:
             self.latest = (now, pos, quat, Rb, q); self.latest_src = src; self.state_cv.notify()
         t0 = time.perf_counter()
         with self.lock:
+            self.maps.provenance_context = dict(sample_seq=self.seq + 1)
             packed = self.maps.sample(np.array([[pos[0], pos[1], yaw]]), np.array([pos[2]]), now)[0].astype(np.float32)
+            if self.raw:
+                self.raw.write("sample", dict(seq=self.seq + 1, stamp=now, src_wall=row.get("wall"), src_count=row.get("count")),
+                               dict(pose=np.array([pos[0], pos[1], yaw]), scanner=np.array([pos[2]]), packet=packed))
         edits = 0
         if self.gt:  # arm D: same schedule and cost, ground-truth height/valid at the same sample pose
             packed[:2 * CELLS] = self.gt_grid(pos, yaw)
@@ -386,6 +407,7 @@ class Sidecar:
         self.seq += 1
         self.sock.sendto(b"GSC2" + struct.pack("<IdI4f", len(packed), now * 1000., self.seq, pos[0], pos[1], pos[2], yaw)
                          + packed.tobytes(), self.addr)
+        if self.raw: self.raw.write("send", dict(seq=self.seq, stamp_ms=now * 1000.), dict(packet=packed))
         if self.payload:
             self.payload.write(struct.pack("<Id", self.seq, now * 1000.) + packed.tobytes())
         self.stats["sent"] += 1
@@ -414,6 +436,10 @@ def main():
     ap.add_argument("--trace", default=None, help="per-event timing/pose JSONL (capture, integrate, send)")
     ap.add_argument("--map", choices=("sensor", "gt", "s_landing"), default="sensor",
                     help="gt = diagnostic arm D, s_landing = S with landing-edge false gaps set to GT (see above)")
+    ap.add_argument("--raw", default=None, help="lossless capture + serialized map-operation stream for CPU replay")
+    ap.add_argument("--provenance", default=None, help="bounded sensor-only mapper decision JSONL (default off)")
+    ap.add_argument("--raw-max-mb", type=int, default=1024)
+    ap.add_argument("--provenance-max-mb", type=int, default=512)
     ap.add_argument("--payload", default=None, help="binary record of every sent packet")
     a = ap.parse_args()
     if not a.xml:
@@ -423,13 +449,23 @@ def main():
     car.trace(ev="start", mono_wall_offset=time.time() - time.monotonic(), mode=a.mode, seed=a.seed, map=a.map)
     car.start_worker()
     print(f"[sidecar] mode={a.mode} boxes={len(car.lo)} udp=127.0.0.1:{a.port} train_root={TRAIN}", flush=True)
-    for line in sys.stdin:
-        try:
-            row = json.loads(line)
-        except ValueError:
-            continue
-        if row.get("pos"):
-            car.step(row)
+    try:
+        for line in sys.stdin:
+            try:
+                row = json.loads(line)
+            except ValueError:
+                continue
+            if row.get("pos"):
+                car.step(row)
+    finally:
+        car.stop_worker.set()
+        with car.state_cv: car.state_cv.notify_all()
+        car.worker.join()
+        if car.raw: car.raw.close()
+        if car.provenance: car.provenance.close()
+        if car.payload: car.payload.flush(); car.payload.close()
+        if car.trace_f: car.trace_f.close()
+
 
 
 if __name__ == "__main__":
