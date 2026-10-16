@@ -30,7 +30,7 @@ export FINISH_X=41.0 RBQ_SIM_OBS_NOISE=$NOISE RBQ_PAYLOAD_KG=$PAYLOAD_KG
 noise=$([ "$NOISE" = 1 ] && echo On || echo Off)
 sec=${SEC%.0}
 tag="${MODEL}_gap5-30cm_runup4m_stairs20cm-20steps_stairs25cm_vx${VX}_noise${noise}_payload${PAYLOAD_KG}kg"
-tag+="_st20-upPull${UP_PULL_N}N-upPush${UP_PUSH_N}N-downPull${DOWN_PULL_N}N-downPush${DOWN_PUSH_N}N-${sec}s"
+tag+="_st20-upPull${UP_PULL_N}N-upPush${UP_PUSH_N}N-downPull${DOWN_PULL_N}N-downPush${DOWN_PUSH_N}N-${sec}s${TAG_EXTRA:-}"
 run="$OUT_DIR/$tag"
 mkdir -p "$OUT_DIR/videos"
 [ -e "$run" ] && run="${run}_$(date +%H%M%S)"   # never overwrite an earlier run

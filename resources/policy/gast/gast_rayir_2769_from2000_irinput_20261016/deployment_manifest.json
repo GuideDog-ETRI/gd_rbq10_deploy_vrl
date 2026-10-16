@@ -1,0 +1,145 @@
+{
+  "teacher_sha256": "65da772b8b793caf5e210f7db778c17d006999010ce964b2fc2af2deadad20c9",
+  "iteration": 2769,
+  "kind": "gast_teacher_oracle",
+  "policy_class": "gd_lab.gast.teacher:GastRayIrActorCritic",
+  "terrain_channels": 3,
+  "ir_channel": "input: frames[...,374:561] from the sensor sidecar (RBQ_GAST_SCAN_UDP)",
+  "frame_width": 561,
+  "actor_onnx_sha256": "9b58dc36e522dd90a610e9c8e22da72bc29fda70899fcccd91c4ae08d1e2f002",
+  "encoder_onnx_sha256": "c7be4fe0ba1bb90c1daefdb246298b4009527fbdeb8207e57ca28b2976d86a84",
+  "parity_max_abs_error": 0.0005863159894943237,
+  "checks": {
+    "actor_0": 3.337860107421875e-06,
+    "actor_1": 4.5299530029296875e-06,
+    "actor_2": 4.410743713378906e-06,
+    "actor_3": 1.1920928955078125e-06,
+    "actor_4": 4.0531158447265625e-06,
+    "actor_5": 2.9802322387695312e-06,
+    "actor_6": 2.1457672119140625e-06,
+    "actor_7": 2.1457672119140625e-06,
+    "actor_8": 2.6226043701171875e-06,
+    "actor_9": 2.86102294921875e-06,
+    "actor_10": 2.5033950805664062e-06,
+    "actor_11": 4.0531158447265625e-06,
+    "encoder_trajectory_700_max": 0.0005863159894943237,
+    "encoder_blackout_zero_steps": 30
+  },
+  "history_offsets": [
+    48,
+    32,
+    16,
+    8,
+    4,
+    2,
+    1,
+    0
+  ],
+  "capture_period_s": 0.1,
+  "input_note": "full unmasked course height grid + 8-step ego-aligned memory, no noise; matches GAST teacher training input; simulation diagnostic only",
+  "source_checkpoint": "/home/user/gd_project/archive/gd_lab_vrl_worktrees/consolidate_20261016/checkpoints/teachers/gast/rayir_top5_20261016/2769_from2000/best_top5/2769_top1.pt",
+  "train_root": "/home/user/gd_project/archive/gd_lab_vrl_worktrees/consolidate_20261016",
+  "camera_profile": "vendor_new",
+  "camera_contract": {
+    "profile": "vendor_new",
+    "positions": [
+      [
+        0.364,
+        0,
+        -0.024919
+      ],
+      [
+        0.26097,
+        0,
+        -0.04582
+      ],
+      [
+        -0.19515,
+        0.0065,
+        -0.0465
+      ],
+      [
+        -0.352082,
+        -1.1e-05,
+        -0.018938
+      ]
+    ],
+    "quaternions_opengl": [
+      [
+        0,
+        -0.1736482,
+        0,
+        0.9848078
+      ],
+      [
+        0,
+        0.1218693,
+        0,
+        0.9925462
+      ],
+      [
+        0,
+        0,
+        0,
+        1
+      ],
+      [
+        0.9848078,
+        0,
+        0.1736482,
+        0
+      ]
+    ],
+    "sensor_size_m": [
+      0.003896,
+      0.00214
+    ],
+    "focal_m": 0.00193,
+    "width": 80,
+    "height": 45,
+    "source_resolution": [
+      640,
+      360
+    ],
+    "depth_clip": [
+      0.15,
+      5.0
+    ],
+    "period_steps": 8,
+    "policy_dt": 0.01,
+    "render_height": 48,
+    "schema_version": 1,
+    "terrain_observation_version": 2,
+    "camera_names": [
+      "front_depth_camera0",
+      "front_depth_camera1",
+      "hind_depth_camera2",
+      "hind_depth_camera3"
+    ],
+    "channels": [
+      "depth",
+      "ir_proxy"
+    ],
+    "transform": "camera_to_trunk",
+    "camera_convention": "opengl: looks along -z, +y up",
+    "source": "RBQ SDK rbq.xml BT0-3 (v1.19.47, v1.20.0, main, nightly 41f6fac6 2026-09-09, nightly 5974087c 2026-10-04); main commit 68bc33b77719d357b4323fb88549efd905caf721, rbq.xml git blob 68ad7e0ac2d5bf181d3c6b3663310ff582894f8c",
+    "depth_semantics": "optical_axis_metres",
+    "quaternion_order": "wxyz",
+    "fov_degrees": [
+      90.531880673026,
+      58.00833537295417
+    ],
+    "fx": 39.630390143737166,
+    "fy": 40.58411214953271,
+    "cx": 40.0,
+    "cy": 22.5,
+    "frame_shape": [
+      1,
+      4,
+      2,
+      45,
+      80
+    ]
+  },
+  "camera_contract_note": "vendor_new contract of the warm-start BIVT-Ray family; the oracle reads no cameras"
+}

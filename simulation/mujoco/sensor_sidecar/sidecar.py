@@ -1,0 +1,368 @@
+#!/usr/bin/env python3
+"""MuJoCo sensor sidecar for the GAST teacher (simulation only): sensor -> transport -> mapper -> Pilot.
+
+The deploy-sim GAST teacher normally reads the course ground truth (TerrainScan::observeFull). With this sidecar
+it reads the map an onboard sensor stack would give, built with the SAME Python mapper as Isaac E1
+(gd_lab_vrl tools/rl_replay: lidar126.Maps('L0S') = h0d 5 cm world map + structure130, U130_DUAL=2, DDEEP=0.7).
+
+  build/tools/sim-state-probe 3600 10 | python sidecar.py --mode lidar|lidar_ir|depth_ir --xml <course environment.xml>
+      [--port 47610] [--log out/sidecar.jsonl]
+
+Per probe line (10 ms; pose, IMU orientation, 12 leg joints):
+  * every 100 ms: capture
+      lidar / lidar_ir : front LiDAR 120x90 beams 0.5 deg (lidar126 geometry), ray cast on the course boxes,
+                         leg self-occlusion (FK capsules), 1 cm noise, 1% beam drop.
+      depth_ir         : the four vendor_new belly cameras, 160x90 optical depth by ray casting, sensor121 rates
+                         (noise 1 cm, 3% dropout, 0.6% spikes, 15% flying pixels at edges; no stereo fill-in patches),
+                         then camfilter136 (as E1 U136_CAM_FILTER=1).
+  * transport: 0-150 ms delay in 10 ms steps, 5% drop, older-than-delivered discarded (E1 CameraTransport rules);
+    delivered packets are integrated into the world map.
+  * every line: the map is sampled at the current pose -> [h*5 (187), valid (187)] (+ IR (187) for *_ir modes,
+    the rayir_e1.CellIr proxy: camera-visible valid cells, same constants) -> UDP "GSC1" packet to Pilot
+    (RBQ_GAST_SCAN_UDP). Stamps are CLOCK_MONOTONIC ms, like Pilot's nowMs().
+Pilot drops a map older than 300 ms (empty scan -> zero latent). Nothing here sees gap labels.
+"""
+import argparse, json, math, os, re, socket, struct, sys, threading, time
+from pathlib import Path
+
+import numpy as np
+
+HERE = Path(__file__).resolve().parent
+TRAIN = Path(os.environ.get("GD_LAB_TRAIN_ROOT", HERE.parents[3] / "gd_lab_vrl")).resolve()
+for key, value in {"U130_DUAL": "2", "U130_DDEEP": "0.7", "U127_SENSOR_COUNT": "1"}.items():
+    if os.environ.get(key, value) != value:
+        raise SystemExit(f"{key} must be {value} (v25or), got {os.environ[key]}")
+    os.environ[key] = value
+sys.path[:0] = [str(TRAIN / "tools/rl_replay"), str(TRAIN / "src")]
+import lidar126, structure130                       # noqa: E402  (E1 mapper, unchanged)
+from heightmap116 import R as NOISE, rotation       # noqa: E402
+from camfilter136 import reject_outliers            # noqa: E402
+from gd_lab.core.camera_contract import load_camera_contract  # noqa: E402
+assert structure130.S["dual_or"] and abs(structure130.S["d_deep"] - .7) < 1e-9 and lidar126.SENSOR_COUNT == 1
+
+CELLS = 187
+# rayir_e1 / gd_lab.gast.rayir constants (Ray+IR teacher training), unchanged
+IR_FLOOR, IR_AMBIENT, IR_SIGMA, IR_DROP, IR_GAIN, IR_R0, IR_FALLOFF = .05, .05, .03, .03, .57, .6, .5
+RHO_BASE, RHO_DARK, RHO_BRIGHT, BAND_FACTOR, DARK_Z, BRIGHT_Z, WAVES = (.55, .65), .15, .75, .5, 1.28, -1.04, 4
+LEGS = {"HR": (-0.31218, -1), "HL": (-0.31218, 1), "FR": (0.31218, -1), "FL": (0.31218, 1)}  # gap_feet.py FK
+ORDER = ["HR", "HL", "FR", "FL"]
+THIGH_R, CALF_R, FOOT_R = .05, .03, .03
+
+
+# ---------------- course geometry: axis-aligned class="course" boxes (TerrainScan.hpp parsing) ----------------
+def load_boxes(xml):
+    text = Path(xml).read_text()
+    boxes = []
+    for tag in re.findall(r'<geom\b[^>]*\bclass="course"[^>]*>', text):
+        pos = [float(v) for v in re.search(r'\bpos="([^"]+)"', tag).group(1).split()]
+        half = [float(v) for v in re.search(r'\bsize="([^"]+)"', tag).group(1).split()]
+        boxes.append(pos + half)
+    if not boxes:
+        raise SystemExit(f"no class=course boxes in {xml}")
+    b = np.array(boxes, float)
+    return b[:, :3] - b[:, 3:], b[:, :3] + b[:, 3:]
+
+
+def cast_boxes(lo, hi, starts, dirs, max_dist=10.):
+    """Distance to the first box along each ray (inf when none). starts [N,3], dirs [N,3] unit."""
+    centre = starts[:, :2].mean(0)
+    reach = np.maximum(np.abs(hi[:, :2] - centre), np.abs(lo[:, :2] - centre))  # farthest corner per axis
+    gap = np.maximum(0, np.maximum(lo[:, :2] - centre, centre - hi[:, :2]))      # nearest distance per axis
+    near = np.hypot(*gap.T) < max_dist + np.ptp(starts[:, :2], 0).max()
+    lo, hi = lo[near], hi[near]
+    if not len(lo):
+        return np.full(len(starts), np.inf)
+    lo, hi, starts = lo.astype(np.float32), hi.astype(np.float32), starts.astype(np.float32)
+    inv = (1.0 / np.where(np.abs(dirs) < 1e-12, 1e-12, dirs)).astype(np.float32)
+    t1 = (lo[None] - starts[:, None]) * inv[:, None]
+    t2 = (hi[None] - starts[:, None]) * inv[:, None]
+    tmin = np.minimum(t1, t2).max(-1)
+    tmax = np.maximum(t1, t2).min(-1)
+    hit = (tmax >= np.maximum(tmin, 0)) & (tmin <= max_dist)
+    return np.where(hit, np.maximum(tmin, 0), np.inf).min(1).astype(float)
+
+
+def surface(lo, hi, xy):
+    """Top of the highest box under each xy (-inf off the course) -- TerrainScan::surface."""
+    inside = (xy[:, None, 0] >= lo[None, :, 0]) & (xy[:, None, 0] <= hi[None, :, 0]) & \
+             (xy[:, None, 1] >= lo[None, :, 1]) & (xy[:, None, 1] <= hi[None, :, 1])
+    return np.where(inside, hi[None, :, 2], -np.inf).max(1)
+
+
+# ---------------- robot: pose and leg capsules from the probe ----------------
+def rx(a):
+    c, s = math.cos(a), math.sin(a); return np.array([[1, 0, 0], [0, c, -s], [0, s, c]])
+
+
+def ry(a):
+    c, s = math.cos(a), math.sin(a); return np.array([[c, 0, s], [0, 1, 0], [-s, 0, c]])
+
+
+def leg_spheres(pos, Rb, q):
+    """Leg collision as sphere chains (thigh r 5 cm, calf/foot r 3 cm), world frame: centres [M,3], radii [M]."""
+    cs, rs = [], []
+    for i, leg in enumerate(ORDER):
+        hx, side = LEGS[leg]
+        roll, hip, knee = q[3 * i:3 * i + 3]
+        h0 = np.array([hx, .09 * side, 0])
+        thigh0 = h0 + rx(roll) @ np.array([0, .10285 * side, 0])
+        kneep = thigh0 + rx(roll) @ ry(hip) @ np.array([0, 0, -.33])
+        foot = kneep + rx(roll) @ ry(hip) @ ry(knee) @ np.array([-.01, 0, -.335])
+        for a, b, r, n in ((thigh0, kneep, THIGH_R, 7), (kneep, foot, CALF_R, 10)):
+            for s in np.linspace(0, 1, n):
+                cs.append(a + s * (b - a)); rs.append(r)
+        cs.append(foot); rs.append(FOOT_R)
+    return pos + np.array(cs) @ Rb.T, np.array(rs)
+
+
+def cast_spheres(c, r, starts, dirs):
+    """Ray/sphere first hit, float32; |oc|^2 - 2 b + ... expanded so no [N,M,3] temporary is built."""
+    s32, d32, c32 = starts.astype(np.float32), dirs.astype(np.float32), c.astype(np.float32)
+    b = d32 @ c32.T - (s32 * d32).sum(-1, keepdims=True)                 # (c - s) . d   [N,M]
+    cc = (s32 * s32).sum(-1, keepdims=True) - 2 * (s32 @ c32.T) + (c32 * c32).sum(-1)[None]   # |s - c|^2
+    disc = b * b - (cc - (r.astype(np.float32) ** 2)[None])
+    t = b - np.sqrt(np.maximum(disc, 0))
+    return np.where((disc >= 0) & (t > 0), t, np.inf).min(1).astype(float)
+
+
+# ---------------- IR proxy (rayir_e1.CellIr, numpy) ----------------
+class Materials:
+    def __init__(self, seed):
+        g = np.random.default_rng(seed)
+        angle = g.random(WAVES) * 2 * math.pi
+        wavelength = .4 + 1.6 * g.random(WAVES)
+        self.k = np.stack((np.cos(angle), np.sin(angle)), -1) * (2 * math.pi / wavelength)[:, None]
+        self.phase = g.random(WAVES) * 2 * math.pi
+        self.base = RHO_BASE[0] + (RHO_BASE[1] - RHO_BASE[0]) * g.random()
+        band = g.random() * 2 * math.pi
+        self.band_dir = np.array([math.cos(band), math.sin(band)])
+        self.band_phase = g.random() * 2 * math.pi
+        self.band_freq = 2 * math.pi / (1.5 + 2.5 * g.random())
+        self.gain = .9 + .2 * g.random()
+
+    def __call__(self, xy):
+        field = np.sin(xy @ self.k.T + self.phase).sum(-1) / math.sqrt(WAVES / 2)
+        rho = np.full(len(xy), self.base)
+        rho = np.where(field > DARK_Z, RHO_DARK, rho)
+        rho = np.where(field < BRIGHT_Z, RHO_BRIGHT, rho)
+        band = np.sin(xy @ self.band_dir * self.band_freq + self.band_phase) > .9
+        return np.where(band, rho * BAND_FACTOR, rho)
+
+
+def grid_normals(points):
+    g = points.reshape(11, 17, 3)
+    t_col = np.gradient(g, axis=1); t_row = np.gradient(g, axis=0)
+    n = np.cross(t_col, t_row).reshape(-1, 3)
+    n = np.where(n[:, 2:3] < 0, -n, n)
+    norm = np.linalg.norm(n, axis=-1, keepdims=True)
+    return np.where(norm > 1e-9, n / np.maximum(norm, 1e-9), np.array([0, 0, 1.]))
+
+
+# ---------------- sidecar ----------------
+class Sidecar:
+    def __init__(self, a):
+        self.mode, self.ir = a.mode, a.mode.endswith("_ir")
+        self.lo, self.hi = load_boxes(a.xml)
+        self.maps = lidar126.Maps(1, "L0S")
+        self.rng = np.random.default_rng(a.seed)              # capture worker only
+        self.rng_ir = np.random.default_rng(a.seed + 1)       # main thread (IR proxy)
+        self.materials = Materials(a.seed * 7919 + 136)
+        c = load_camera_contract("vendor_new"); self.contract = c
+        self.cam_p, self.cam_q = np.array(c.positions, float), np.array(c.quaternions_opengl, float)
+        self.cw, self.ch = a.cam_w, a.cam_h
+        fx, fy = self.cw * c.focal_m / c.sensor_size_m[0], self.ch * c.focal_m / c.sensor_size_m[1]
+        v, u = np.mgrid[:self.ch, :self.cw]
+        self.cam_local = np.stack(((u + .5 - self.cw / 2) / fx, -(v + .5 - self.ch / 2) / fy, -np.ones(u.shape)), -1)
+        self.K = (fx, fy)
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); self.addr = ("127.0.0.1", a.port)
+        self.queue, self.last_delivered, self.next_capture = [], -1, None
+        self.log = open(a.log, "a") if a.log else None
+        self.stats = dict(lines=0, captures=0, dropped=0, delivered=0, sent=0, capture_ms=[], sample_ms=[])
+        gx, gy = np.meshgrid((np.arange(17) - 8) * .1, (np.arange(11) - 5) * .1)
+        self.grid = np.stack((gx.ravel(), gy.ravel()), -1)
+
+    # -- sensors --
+    def lidar_packet(self, pos, quat, Rb, q, now):
+        origins, dirs = lidar126.mounted(pos[None], quat[None])
+        shape = dirs.shape[:-1]
+        d = dirs.reshape(-1, 3); s = np.broadcast_to(origins[:, :, None, None, :], dirs.shape).reshape(-1, 3)
+        terrain = cast_boxes(self.lo, self.hi, s, d)
+        c, r = leg_spheres(pos, Rb, q); leg = cast_spheres(c, r, s, d)
+        blocked = np.isfinite(leg) & (leg < terrain)
+        dist = np.minimum(leg, terrain)
+        hit = np.isfinite(dist) & (dist >= .1) & (dist <= 10.)
+        noisy = np.where(hit, dist, 10.) + self.rng.normal(0, .01, dist.shape)
+        valid = hit & (self.rng.random(dist.shape) >= .01) & (noisy >= .1) & (noisy <= 10.)
+        noisy[~valid] = 10.
+        rs = lambda x: x.reshape(shape)
+        return dict(origins=origins, dirs=dirs, ranges=rs(noisy), valid=rs(valid), body_pos=pos[None],
+                    body_quat=quat[None], self_hit=rs(blocked & valid))
+
+    def camera_rays(self, pos, Rb):
+        positions = pos + self.cam_p @ Rb.T                                  # [4,3]
+        rots = np.einsum("ij,cjk->cik", Rb, rotation(self.cam_q))           # [4,3,3]
+        rays = np.einsum("hwj,cij->chwi", self.cam_local, rots)             # [4,H,W,3]
+        length = np.linalg.norm(rays, axis=-1)
+        return positions, rays / length[..., None], length
+
+    def depth_packet(self, pos, quat, Rb, q):
+        positions, unit, length = self.camera_rays(pos, Rb)
+        s = np.broadcast_to(positions[:, None, None, :], unit.shape).reshape(-1, 3); d = unit.reshape(-1, 3)
+        terrain = cast_boxes(self.lo, self.hi, s, d, 6.)
+        c, r = leg_spheres(pos, Rb, q)
+        leg = np.full(len(d), np.inf); n = unit.shape[1] * unit.shape[2]
+        for k in range(len(positions)):                                     # per camera, only spheres near its view cone
+            rows = slice(k * n, (k + 1) * n)
+            to = c - positions[k]; dist_c = np.linalg.norm(to, axis=-1)
+            axis = unit[k].reshape(-1, 3).mean(0); axis /= np.linalg.norm(axis)
+            cone = np.arccos(np.clip(unit[k].reshape(-1, 3) @ axis, -1, 1)).max()
+            ang = np.arccos(np.clip((to @ axis) / np.maximum(dist_c, 1e-9), -1, 1))
+            near = ang <= cone + np.arcsin(np.clip(r / np.maximum(dist_c, r + 1e-6), 0, 1))
+            if near.any():
+                leg[rows] = cast_spheres(c[near], r[near], s[rows], d[rows])
+        blocked = (np.isfinite(leg) & (leg < terrain)).reshape(unit.shape[:-1])
+        dist = np.minimum(leg, terrain).reshape(unit.shape[:-1])
+        depth = dist / length                                               # optical depth
+        valid = np.isfinite(depth) & (depth >= .15) & (depth < 5.)
+        safe = np.where(valid, depth, 5.)
+        from scipy import ndimage
+        for k in range(len(depth)):                                         # sensor121 rates, no fill-in patches
+            edge = (ndimage.maximum_filter(safe[k], 3) - ndimage.minimum_filter(safe[k], 3) > .15) & valid[k]
+            fly = edge & (self.rng.random(edge.shape) < NOISE.flying)
+            depth[k][fly] = .5 * (ndimage.maximum_filter(safe[k], 3)[fly] + ndimage.minimum_filter(safe[k], 3)[fly])
+            spike = valid[k] & (self.rng.random(edge.shape) < NOISE.spike)
+            depth[k][spike] = self.rng.uniform(.15, 5, int(spike.sum()))
+            depth[k] = depth[k] + self.rng.normal(0, NOISE.noise_sigma, edge.shape)
+            valid[k] &= (self.rng.random(edge.shape) >= NOISE.dropout) & np.isfinite(depth[k]) & (depth[k] >= .15) & (depth[k] < 5)
+        valid = reject_outliers(np.where(valid, depth, 0.), valid)          # camfilter136
+        ranges = np.where(valid, depth * length, 10.)
+        return dict(origins=positions[None], dirs=unit[None], ranges=ranges[None], valid=valid[None],
+                    body_pos=pos[None], body_quat=quat[None], self_hit=(blocked & valid)[None]), (depth, valid)
+
+    def cell_ir(self, pos, Rb, q, yaw, valid):
+        """IR for the 187 cells at the current pose (rayir_e1.CellIr): camera-visible, valid map cells, 3% drop."""
+        cy, sy = math.cos(yaw), math.sin(yaw)
+        xy = pos[:2] + self.grid @ np.array([[cy, sy], [-sy, cy]])
+        z = surface(self.lo, self.hi, xy)
+        finite = np.isfinite(z)
+        pts = np.c_[xy, np.where(finite, z, 0.)]
+        positions, _, _ = self.camera_rays(pos, Rb)
+        rots = np.einsum("ij,cjk->cik", Rb, rotation(self.cam_q))
+        c, r = leg_spheres(pos, Rb, q)
+        best_r = np.full(CELLS, np.inf); best_l = np.zeros((CELLS, 3)); seen = np.zeros(CELLS, bool)
+        for k in range(len(positions)):
+            to = pts - positions[k]; rr = np.linalg.norm(to, axis=-1); u = to / np.maximum(rr, 1e-9)[:, None]
+            local = to @ rots[k]                                            # camera frame (OpenGL: -z forward)
+            zc = -local[:, 2]
+            px = local[:, 0] / np.maximum(zc, 1e-9) * self.K[0] + self.cw / 2
+            py = -local[:, 1] / np.maximum(zc, 1e-9) * self.K[1] + self.ch / 2
+            inview = (zc > self.contract.depth_clip[0]) & (zc < self.contract.depth_clip[1]) & \
+                     (px >= 0) & (px < self.cw) & (py >= 0) & (py < self.ch)
+            start = np.broadcast_to(positions[k], pts.shape)
+            clear = cast_boxes(self.lo, self.hi, start, u, 6.) >= rr - .015
+            clear &= cast_spheres(c, r, start, u) >= rr
+            ok = inview & clear & finite
+            closer = ok & (rr < best_r)
+            best_r = np.where(closer, rr, best_r); best_l = np.where(closer[:, None], -u, best_l); seen |= ok
+        cosine = np.clip((grid_normals(pts) * best_l).sum(-1), 0, None)
+        falloff = (IR_R0 / np.clip(best_r, .15, 1e3)) ** IR_FALLOFF
+        inten = np.clip(IR_AMBIENT + IR_GAIN * self.materials.gain * self.materials(xy) * cosine * falloff
+                        + self.rng_ir.normal(0, IR_SIGMA, CELLS), 0, 1)
+        keep = valid & seen & finite & (self.rng_ir.random(CELLS) > IR_DROP)
+        return np.where(keep, IR_FLOOR + (1 - IR_FLOOR) * inten, 0.).astype(np.float32)
+
+    # -- loop: the main thread samples every probe line; a worker captures every 100 ms --
+    def start_worker(self):
+        self.lock = threading.Lock(); self.latest = None; self.state_cv = threading.Condition()
+        threading.Thread(target=self.capture_loop, daemon=True).start()
+
+    def capture_loop(self):
+        while True:
+            with self.state_cv:
+                self.state_cv.wait_for(lambda: self.latest is not None)
+                row_time, pos, quat, Rb, q = self.latest
+            now = time.monotonic()
+            if self.next_capture is None:
+                self.next_capture = now
+            self.deliver(time.monotonic())
+            if now < self.next_capture:
+                time.sleep(min(.005, self.next_capture - now)); continue
+            t0 = time.perf_counter()
+            packet = self.depth_packet(pos, quat, Rb, q)[0] if self.mode == "depth_ir" else \
+                self.lidar_packet(pos, quat, Rb, q, row_time)
+            done = time.monotonic()
+            self.stats["capture_ms"].append(1000 * (time.perf_counter() - t0)); self.stats["captures"] += 1
+            if self.rng.random() < .05:
+                self.stats["dropped"] += 1
+            else:  # delivered after the transport delay, never before the computation finished
+                self.queue.append((max(row_time + .01 * self.rng.integers(0, 16), done), row_time, packet))
+            late = now - self.next_capture
+            self.next_capture = now + .1 if late >= .1 else self.next_capture + .1
+            self.stats["late_captures"] = self.stats.get("late_captures", 0) + int(late >= .1)
+
+    def deliver(self, now):
+        """Worker thread: integrate the packets whose delivery time has come, in capture order."""
+        ready = sorted([i for i in self.queue if i[0] <= now], key=lambda i: i[1])
+        for item in ready:
+            self.queue.remove(item)
+            if item[1] <= self.last_delivered:
+                continue                                                    # older than the last delivered capture
+            t0 = time.perf_counter()
+            with self.lock:
+                self.maps.integrate([0], item[2], item[1], now)
+            self.last_delivered = item[1]; self.stats["delivered"] += 1
+            self.stats.setdefault("integrate_ms", []).append(1000 * (time.perf_counter() - t0))
+
+    def step(self, row):
+        now = time.monotonic()
+        pos = np.array(row["pos"], float)
+        x, y, z, w = row["imu_xyzw"]; quat = np.array([w, x, y, z], float)
+        Rb = rotation(quat[None])[0]; q = np.array(row.get("q") or [0.] * 12, float)
+        yaw = math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
+        self.stats["lines"] += 1
+        with self.state_cv:
+            self.latest = (now, pos, quat, Rb, q); self.state_cv.notify()
+        t0 = time.perf_counter()
+        with self.lock:
+            packed = self.maps.sample(np.array([[pos[0], pos[1], yaw]]), np.array([pos[2]]), now)[0].astype(np.float32)
+        if self.ir:
+            packed = np.r_[packed, self.cell_ir(pos, Rb, q, yaw, packed[CELLS:] > 0)]
+        self.stats["sample_ms"].append(1000 * (time.perf_counter() - t0))
+        self.sock.sendto(b"GSC1" + struct.pack("<Id", len(packed), now * 1000.) + packed.tobytes(), self.addr)
+        self.stats["sent"] += 1
+        if self.log and self.stats["lines"] % 50 == 0:
+            cm, sm = self.stats["capture_ms"][-20:], self.stats["sample_ms"][-50:]
+            self.log.write(json.dumps(dict(t=now, x=float(pos[0]), valid=int((packed[CELLS:2 * CELLS] > 0).sum()),
+                                           ir_cells=int((packed[2 * CELLS:] > 0).sum()) if self.ir else None,
+                                           capture_ms_p95=float(np.percentile(cm, 95)) if cm else None,
+                                           sample_ms_p95=float(np.percentile(sm, 95)) if sm else None,
+                                           sample_ms_max=float(max(sm)) if sm else None,
+                                           **{k: v for k, v in self.stats.items() if isinstance(v, int)})) + "\n")
+            self.log.flush()
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--mode", choices=("lidar", "lidar_ir", "depth_ir"), required=True)
+    ap.add_argument("--xml", default=os.environ.get("RBQ_CVTT_TERRAIN_XML"))
+    ap.add_argument("--port", type=int, default=int(os.environ.get("RBQ_GAST_SCAN_UDP", "47610")))
+    ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--cam_w", type=int, default=160); ap.add_argument("--cam_h", type=int, default=90)  # E1 cam130 size
+    ap.add_argument("--log", default=None)
+    a = ap.parse_args()
+    if not a.xml:
+        raise SystemExit("--xml or RBQ_CVTT_TERRAIN_XML required")
+    car = Sidecar(a)
+    car.start_worker()
+    print(f"[sidecar] mode={a.mode} boxes={len(car.lo)} udp=127.0.0.1:{a.port} train_root={TRAIN}", flush=True)
+    for line in sys.stdin:
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if row.get("pos"):
+            car.step(row)
+
+
+if __name__ == "__main__":
+    main()
