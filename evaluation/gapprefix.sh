@@ -23,7 +23,7 @@ if [ "$ARM" = C ]; then
   mkdir -p "$run"
   setsid bash -c "'$REPO/build/tools/sim-state-probe' 3600 10 | apptainer exec '$SIF' env CUDA_VISIBLE_DEVICES='' OMP_NUM_THREADS=4 \
     '$PY' '$REPO/simulation/mujoco/sensor_sidecar/sidecar.py' --mode lidar --seed $SEED --xml '$REPO/simulation/terrains/gap_stairs_force4/environment.xml' \
-    --port $RBQ_GAST_SCAN_UDP --log '$run/sidecar.jsonl'" > "$run/sidecar.out" 2>&1 &
+    --port $RBQ_GAST_SCAN_UDP --log '$run/sidecar.jsonl' --trace '$run/sidecar_trace.jsonl'" > "$run/sidecar.out" 2>&1 &
   SIDE=$!; sleep 3
 fi
 printf '{"arm":"%s","seed":%s,"model":"%s","launcher":"%s","terrain_noise":%s,"proprio_noise":1,"finish_x":12.0,"forces":[]}\n' \
