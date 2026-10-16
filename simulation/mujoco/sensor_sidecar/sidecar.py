@@ -18,8 +18,12 @@ Per probe line (10 ms; pose, IMU orientation, 12 leg joints):
   * transport: 0-150 ms delay in 10 ms steps, 5% drop, older-than-delivered discarded (E1 CameraTransport rules);
     delivered packets are integrated into the world map.
   * every line: the map is sampled at the current pose -> [h*5 (187), valid (187)] (+ IR (187) for *_ir modes,
-    the rayir_e1.CellIr proxy: camera-visible valid cells, same constants) -> UDP "GSC1" packet to Pilot
-    (RBQ_GAST_SCAN_UDP). Stamps are CLOCK_MONOTONIC ms, like Pilot's nowMs().
+    the rayir_e1.CellIr proxy: camera-visible valid cells, same constants) -> UDP "GSC2" packet to Pilot
+    (RBQ_GAST_SCAN_UDP): "GSC2", uint32 width, double stamp_ms (CLOCK_MONOTONIC, like Pilot's nowMs()),
+    uint32 seq, float sample x, y, z, yaw (the pose the grid was sampled at), float[width].
+  * --map gt (diagnostic arm D): the sensor pipeline still runs on the same schedule, but the height/valid part of
+    each packet is replaced by the course ground truth at the same sample pose (full valid, TerrainScan encoding).
+  * --payload FILE: every sent packet as uint32 seq, double stamp_ms, float[width] (binary, for offline replay).
 Pilot drops a map older than 300 ms (empty scan -> zero latent). Nothing here sees gap labels.
 """
 import argparse, json, math, os, re, socket, struct, sys, threading, time
@@ -180,6 +184,16 @@ class Sidecar:
         self.stats = dict(lines=0, captures=0, dropped=0, delivered=0, sent=0, capture_ms=[], sample_ms=[])
         gx, gy = np.meshgrid((np.arange(17) - 8) * .1, (np.arange(11) - 5) * .1)
         self.grid = np.stack((gx.ravel(), gy.ravel()), -1)
+        self.gt = getattr(a, "map", "sensor") == "gt"
+        self.payload = open(a.payload, "wb") if getattr(a, "payload", None) else None
+        self.seq = 0
+
+    def gt_grid(self, pos, yaw):
+        """Course ground truth at the sample pose: [h*5 (187), valid (187)], h = 5*clip(base_z - surface - 0.5)."""
+        cy, sy = math.cos(yaw), math.sin(yaw)
+        gz = surface(self.lo, self.hi, pos[:2] + self.grid @ np.array([[cy, sy], [-sy, cy]]))
+        ok = np.isfinite(gz)
+        return np.r_[np.where(ok, 5 * np.clip(pos[2] - gz - .5, -1, 1), 0.), ok.astype(float)].astype(np.float32)
 
     # -- sensors --
     def lidar_packet(self, pos, quat, Rb, q, now):
@@ -342,12 +356,18 @@ class Sidecar:
         t0 = time.perf_counter()
         with self.lock:
             packed = self.maps.sample(np.array([[pos[0], pos[1], yaw]]), np.array([pos[2]]), now)[0].astype(np.float32)
+        if self.gt:  # arm D: same schedule and cost, ground-truth height/valid at the same sample pose
+            packed[:2 * CELLS] = self.gt_grid(pos, yaw)
         if self.ir:
-            packed = np.r_[packed, self.cell_ir(pos, Rb, q, yaw, packed[CELLS:] > 0)]
+            packed = np.r_[packed, self.cell_ir(pos, Rb, q, yaw, packed[CELLS:2 * CELLS] > 0)]
         self.stats["sample_ms"].append(1000 * (time.perf_counter() - t0))
-        self.sock.sendto(b"GSC1" + struct.pack("<Id", len(packed), now * 1000.) + packed.tobytes(), self.addr)
+        self.seq += 1
+        self.sock.sendto(b"GSC2" + struct.pack("<IdI4f", len(packed), now * 1000., self.seq, pos[0], pos[1], pos[2], yaw)
+                         + packed.tobytes(), self.addr)
+        if self.payload:
+            self.payload.write(struct.pack("<Id", self.seq, now * 1000.) + packed.tobytes())
         self.stats["sent"] += 1
-        self.trace(ev="send", stamp=now, sent_wall=time.time(), x=float(pos[0]), y=float(pos[1]), z=float(pos[2]), yaw=yaw,
+        self.trace(ev="send", seq=self.seq, stamp=now, sent_wall=time.time(), x=float(pos[0]), y=float(pos[1]), z=float(pos[2]), yaw=yaw,
                    last_capture=self.last_cid, last_capture_mono=self.last_delivered,
                    valid=int((packed[CELLS:2 * CELLS] > 0).sum()), **src)
         if self.log and self.stats["lines"] % 50 == 0:
@@ -370,12 +390,14 @@ def main():
     ap.add_argument("--cam_w", type=int, default=160); ap.add_argument("--cam_h", type=int, default=90)  # E1 cam130 size
     ap.add_argument("--log", default=None)
     ap.add_argument("--trace", default=None, help="per-event timing/pose JSONL (capture, integrate, send)")
+    ap.add_argument("--map", choices=("sensor", "gt"), default="sensor", help="gt = diagnostic arm D (see above)")
+    ap.add_argument("--payload", default=None, help="binary record of every sent packet")
     a = ap.parse_args()
     if not a.xml:
         raise SystemExit("--xml or RBQ_CVTT_TERRAIN_XML required")
     car = Sidecar(a)
     car.trace_lock = threading.Lock(); car.trace_f = open(a.trace, "w", buffering=1) if a.trace else None
-    car.trace(ev="start", mono_wall_offset=time.time() - time.monotonic(), mode=a.mode, seed=a.seed)
+    car.trace(ev="start", mono_wall_offset=time.time() - time.monotonic(), mode=a.mode, seed=a.seed, map=a.map)
     car.start_worker()
     print(f"[sidecar] mode={a.mode} boxes={len(car.lo)} udp=127.0.0.1:{a.port} train_root={TRAIN}", flush=True)
     for line in sys.stdin:

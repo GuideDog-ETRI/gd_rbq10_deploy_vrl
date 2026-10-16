@@ -186,6 +186,7 @@ export RBQ_SIM_OBS_NOISE='${RBQ_SIM_OBS_NOISE:-0}'
 export RBQ_SIM_OBS_NOISE_SEED='${RBQ_SIM_OBS_NOISE_SEED:-42}'
 export RBQ_SIM_TERRAIN_NOISE='${RBQ_SIM_TERRAIN_NOISE:-1}'
 export RBQ_GAST_SCAN_UDP='${RBQ_GAST_SCAN_UDP:-}'
+export RBQ_GAST_SCAN_LOG='${RBQ_GAST_SCAN_LOG:-}'
 export RBQ_HEALTH='${RBQ_HEALTH:-1}'
 '${BUILD_DIR}/pilot/CAMEL-Pilot' --interface lo --sim \\
     --tcp-port ${PILOT_TCP} --beacon-port ${PILOT_BEACON} 2>&1 | tee -a '${RBQ_VRL_PILOT_LOG:-/dev/null}'

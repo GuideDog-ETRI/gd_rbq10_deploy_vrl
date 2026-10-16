@@ -176,6 +176,10 @@ VisionStudentThread::VisionStudentThread(const std::string& studentOnnxPath, int
                         FILE_LOG_AS(logERROR, "RLWALK") << "RBQ_GAST_SCAN_UDP bind failed on 127.0.0.1:" << port;
                         return;
                     }
+                    if (const char* path = std::getenv("RBQ_GAST_SCAN_LOG"); path && *path) {
+                        m_scanLog.open(path, std::ios::out | std::ios::trunc);
+                        m_scanLog << "now_ms seq stamp_ms used sample_x sample_y sample_z sample_yaw pose_x pose_y pose_z pose_yaw pose_stamp_ms valid\n";
+                    }
                 } else if (width == GastTerrainMemory::kScanIr) {
                     FILE_LOG_AS(logERROR, "RLWALK") << "Ray+IR GAST encoder (561-wide frames) needs RBQ_GAST_SCAN_UDP (sensor sidecar)";
                     return;
@@ -766,19 +770,25 @@ void VisionStudentThread::studentLoop(int updatePeriodMs) {
     }
 }
 
-// Packet (little endian): "GSC1", uint32 width (374 | 561), double stamp_ms (CLOCK_MONOTONIC like nowMs), float[width].
+// Packet (little endian): "GSC1", uint32 width (374 | 561), double stamp_ms (CLOCK_MONOTONIC like nowMs), float[width];
+// or "GSC2", uint32 width, double stamp_ms, uint32 seq, float sample x, y, z, yaw, float[width].
 bool VisionStudentThread::readExternalScan(int width) {
-    std::array<char, 16 + 4 * GastTerrainMemory::kScanIr> buf{};
+    std::array<char, 36 + 4 * GastTerrainMemory::kScanIr> buf{};
+    std::vector<float> scan(width);
     bool got = false;
     for (;;) {
         const ssize_t n = ::recv(m_scanSocket, buf.data(), buf.size(), 0);
         if (n < 0) break;
-        uint32_t w = 0; double stamp = 0;
+        const bool v2 = n >= 4 && std::memcmp(buf.data(), "GSC2", 4) == 0;
+        if (!v2 && (n < 4 || std::memcmp(buf.data(), "GSC1", 4) != 0)) continue;
+        const size_t head = v2 ? 36 : 16;
+        uint32_t w = 0, seq = 0; double stamp = 0; std::array<float, 4> pose{};
         std::memcpy(&w, buf.data() + 4, 4); std::memcpy(&stamp, buf.data() + 8, 8);
-        if (n != static_cast<ssize_t>(16 + 4 * w) || std::memcmp(buf.data(), "GSC1", 4) != 0 || static_cast<int>(w) != width) continue;
-        m_extScan.resize(width);
-        std::memcpy(m_extScan.data(), buf.data() + 16, 4 * width);
-        if (!std::all_of(m_extScan.begin(), m_extScan.end(), [](float v){ return std::isfinite(v); })) continue;
+        if (n != static_cast<ssize_t>(head + 4 * w) || static_cast<int>(w) != width) continue;
+        if (v2) { std::memcpy(&seq, buf.data() + 16, 4); std::memcpy(pose.data(), buf.data() + 20, 16); }
+        std::memcpy(scan.data(), buf.data() + head, 4 * width);
+        if (!std::all_of(scan.begin(), scan.end(), [](float v){ return std::isfinite(v); })) continue;
+        m_extScan = scan; m_extSeq = seq; m_extPose = pose;
         m_extStampMs = static_cast<int64_t>(stamp); ++m_extPackets; got = true;
     }
     return got || (!m_extScan.empty());
@@ -801,8 +811,17 @@ void VisionStudentThread::gastStep(const Ort::MemoryInfo& mem, int& tick) {
         if (m_scanSocket >= 0) {
             // External sensor map: the sidecar already models sensor, transport and mapper; no extra terrain noise.
             // A missing/stale map (> 300 ms) is an empty scan: exact zero latent, as a training blackout.
-            if (readExternalScan(width) && now - m_extStampMs <= 300) std::copy(m_extScan.begin(), m_extScan.end(), scan.begin());
+            const bool used = readExternalScan(width) && now - m_extStampMs <= 300;
+            if (used) std::copy(m_extScan.begin(), m_extScan.end(), scan.begin());
             else ++m_extStale;
+            if (m_scanLog.is_open()) {
+                const auto& q = latest.quat;  // wxyz
+                const float yaw = std::atan2(2 * (q[0]*q[3] + q[1]*q[2]), 1 - 2 * (q[2]*q[2] + q[3]*q[3]));
+                m_scanLog << now << ' ' << m_extSeq << ' ' << m_extStampMs << ' ' << used << ' ' << m_extPose[0] << ' '
+                          << m_extPose[1] << ' ' << m_extPose[2] << ' ' << m_extPose[3] << ' ' << latest.pos[0] << ' '
+                          << latest.pos[1] << ' ' << latest.pos[2] << ' ' << yaw << ' ' << latest.stampMs << ' '
+                          << std::count(scan.begin() + TerrainScan::kPoints, scan.begin() + 2 * TerrainScan::kPoints, 1.f) << '\n';
+            }
         } else {
             auto full = m_teacherScan->observeFull({latest.pos, latest.quat});
             // Simulation-only training-contract terrain noise (RBQ_SIM_OBS_NOISE=1, RBQ_SIM_TERRAIN_NOISE!=0; SimObsNoise.hpp).
