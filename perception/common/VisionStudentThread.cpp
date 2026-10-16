@@ -532,7 +532,7 @@ void VisionStudentThread::studentLoop(int updatePeriodMs) {
         if (m_resetRequested.exchange(false, std::memory_order_acq_rel)) {
             std::fill(m_hidden.begin(), m_hidden.end(), 0.f);
             if (m_gastMemory) m_gastMemory->reset();
-            if (SimObsNoise::instance().enabled()) SimObsNoise::instance().resetTerrain();
+            if (SimObsNoise::instance().terrainEnabled()) SimObsNoise::instance().resetTerrain();
         }
 
         if (m_gastMode) {
@@ -805,8 +805,8 @@ void VisionStudentThread::gastStep(const Ort::MemoryInfo& mem, int& tick) {
             else ++m_extStale;
         } else {
             auto full = m_teacherScan->observeFull({latest.pos, latest.quat});
-            // Simulation-only training-contract terrain noise (RBQ_SIM_OBS_NOISE=1, SimObsNoise.hpp).
-            if (SimObsNoise::instance().enabled()) SimObsNoise::instance().corruptTerrain(full);
+            // Simulation-only training-contract terrain noise (RBQ_SIM_OBS_NOISE=1, RBQ_SIM_TERRAIN_NOISE!=0; SimObsNoise.hpp).
+            if (SimObsNoise::instance().terrainEnabled()) SimObsNoise::instance().corruptTerrain(full);
             std::copy(full.begin(), full.end(), scan.begin());
         }
         const auto& q = latest.quat;  // wxyz
@@ -817,7 +817,7 @@ void VisionStudentThread::gastStep(const Ort::MemoryInfo& mem, int& tick) {
             FILE_LOG_AS(logINFO, "RLWALK") << "GAST teacher scan valid=" << valid << "/187 ext_packets=" << m_extPackets
                 << " ext_stale_ticks=" << m_extStale << " memory="
                 << m_gastMemory->size() << " oldest_age=" << in.ages[0] << " pose_age_ms=" << now - latest.stampMs
-                << " sim_obs_noise=" << SimObsNoise::instance().enabled() << " blackout_steps=" << SimObsNoise::instance().blackoutSteps();
+                << " sim_obs_noise=" << SimObsNoise::instance().enabled() << " terrain_noise=" << SimObsNoise::instance().terrainEnabled() << " blackout_steps=" << SimObsNoise::instance().blackoutSteps();
         const std::array<int64_t, 3> framesShape{1, GastTerrainMemory::kInputs, width};
         const std::array<int64_t, 3> posesShape{1, GastTerrainMemory::kInputs, 3};
         const std::array<int64_t, 2> poseShape{1, 3}, agesShape{1, GastTerrainMemory::kInputs};
