@@ -4,6 +4,9 @@
 #   ARM=A  oracle, training-contract noise on proprio + terrain            (RBQ_SIM_OBS_NOISE=1)
 #   ARM=B  oracle, proprio noise only, terrain clean                       (RBQ_SIM_TERRAIN_NOISE=0)
 #   ARM=C  LiDAR sidecar (v25or, IR 0), proprio noise; see force4_sensor.sh (needs the 374 bundle launcher)
+#   ARM=D  as C (same sidecar schedule and cost), but each packet carries the course ground truth at the sample pose
+# C / D also record <run>/sidecar_trace.jsonl, sidecar_payload.bin (every sent packet) and pilot_scan.log
+# (RBQ_GAST_SCAN_LOG: the packet seq / sample pose Pilot actually used at each GAST step, with its own pose).
 #   ARM=A SEED=42 MODEL=dwb38000_3906 LAUNCHER=scripts/gast/teacher/gast_rayir_3906/run_sim.sh OUT_DIR=... evaluation/gapprefix.sh
 # SEED feeds RBQ_SIM_OBS_NOISE_SEED (proprio stream; terrain stream seed+1) and, for C, the sidecar --seed.
 set -u
@@ -12,18 +15,20 @@ here="$(cd "$(dirname "$0")" && pwd)"; source "$here/common.sh"
 VX=${VX:-1.0}; PAYLOAD_KG=${PAYLOAD_KG:-6}; WALK_S=${WALK_S:-60}
 export DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/$(id -u)/gdm/Xauthority}
 export FINISH_X=12.0 HOLD_S=2 RBQ_SIM_OBS_NOISE=1 RBQ_SIM_OBS_NOISE_SEED=$SEED RBQ_PAYLOAD_KG=$PAYLOAD_KG
-case $ARM in A) export RBQ_SIM_TERRAIN_NOISE=1 ;; B|C) export RBQ_SIM_TERRAIN_NOISE=0 ;; *) echo "ARM A|B|C" >&2; exit 2 ;; esac
+case $ARM in A) export RBQ_SIM_TERRAIN_NOISE=1 ;; B|C|D) export RBQ_SIM_TERRAIN_NOISE=0 ;; *) echo "ARM A|B|C|D" >&2; exit 2 ;; esac
 tag="${MODEL}_gapprefix5-30cm_vx${VX}_payload${PAYLOAD_KG}kg_noForce_arm${ARM}_seed${SEED}"
 run="$OUT_DIR/$tag"; mkdir -p "$OUT_DIR/videos"
 [ -e "$run" ] && run="${run}_$(date +%H%M%S)"
 SIDE=
-if [ "$ARM" = C ]; then
-  export RBQ_GAST_SCAN_UDP=${RBQ_GAST_SCAN_UDP:-47610}
+if [ "$ARM" = C ] || [ "$ARM" = D ]; then
+  MAP=$([ "$ARM" = D ] && echo gt || echo sensor)
+  export RBQ_GAST_SCAN_UDP=${RBQ_GAST_SCAN_UDP:-47610} RBQ_GAST_SCAN_LOG="$run/pilot_scan.log"
   SIF=${GD_LAB_SIF:-/home/user/workspace/gd_lab_isaaclab.sif}; PY=${GD_LAB_PYTHON:-/home/user/workspace/venv_apptainer/bin/python}
   mkdir -p "$run"
   setsid bash -c "'$REPO/build/tools/sim-state-probe' 3600 10 | apptainer exec '$SIF' env CUDA_VISIBLE_DEVICES='' OMP_NUM_THREADS=4 \
     '$PY' '$REPO/simulation/mujoco/sensor_sidecar/sidecar.py' --mode lidar --seed $SEED --xml '$REPO/simulation/terrains/gap_stairs_force4/environment.xml' \
-    --port $RBQ_GAST_SCAN_UDP --log '$run/sidecar.jsonl' --trace '$run/sidecar_trace.jsonl'" > "$run/sidecar.out" 2>&1 &
+    --port $RBQ_GAST_SCAN_UDP --log '$run/sidecar.jsonl' --trace '$run/sidecar_trace.jsonl' \
+    --map $MAP --payload '$run/sidecar_payload.bin'" > "$run/sidecar.out" 2>&1 &
   SIDE=$!; sleep 3
 fi
 printf '{"arm":"%s","seed":%s,"model":"%s","launcher":"%s","terrain_noise":%s,"proprio_noise":1,"finish_x":12.0,"forces":[]}\n' \

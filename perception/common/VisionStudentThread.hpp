@@ -24,6 +24,7 @@
 //   전처리 수식(depth 정규화, IR 그레이스케일) <-> tasks/vrl_rough.py belly_camera_frames()
 
 #include <array>
+#include <fstream>
 #include <atomic>
 #include <cstdint>
 #include <deque>
@@ -146,6 +147,9 @@ private:
     int m_scanSocket = -1;
     std::vector<float> m_extScan;
     int64_t m_extStampMs = 0, m_extPackets = 0, m_extStale = 0;
+    uint32_t m_extSeq = 0;                 // GSC2 sequence of the latest packet (0 for GSC1)
+    std::array<float, 4> m_extPose{};      // GSC2 sample pose x, y, z, yaw (world)
+    std::ofstream m_scanLog;               // RBQ_GAST_SCAN_LOG: one line per GAST step (packet actually used)
     bool readExternalScan(int width);
     std::array<float, 7> m_capturePose{};
     void gastStep(const Ort::MemoryInfo& mem, int& tick);
