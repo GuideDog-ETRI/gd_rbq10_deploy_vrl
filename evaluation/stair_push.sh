@@ -22,6 +22,10 @@ if [ "${EARLY_STOP:-0}" = 1 ]; then   # end the trial as soon as it falls / sink
     sleep 1
   done
   kill $FW 2>/dev/null
+  wait $WALK
+  # The walk is over (finish, fall or stall): the push trial would otherwise wait out its whole timeout.
+  for i in 1 2 3 4 5; do kill -0 $PUSH 2>/dev/null || break; sleep 1; done
+  kill $PUSH 2>/dev/null
 fi
 wait $WALK
 wait $PUSH
