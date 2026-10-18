@@ -184,6 +184,20 @@ VisionStudentThread::VisionStudentThread(const std::string& studentOnnxPath, int
                     FILE_LOG_AS(logERROR, "RLWALK") << "Ray+IR GAST encoder (561-wide frames) needs RBQ_GAST_SCAN_UDP (sensor sidecar)";
                     return;
                 }
+                if (const char* posePort = std::getenv("RBQ_GAST_POSE_UDP"); posePort && *posePort) {
+                    m_poseSocket = ::socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0);
+                    sockaddr_in pa{}; pa.sin_family = AF_INET; pa.sin_port = htons(std::atoi(posePort));
+                    pa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+                    if (m_poseSocket < 0 || ::bind(m_poseSocket, reinterpret_cast<sockaddr*>(&pa), sizeof(pa)) != 0)
+                        throw std::runtime_error("ODM1 bind failed");
+                    if (const char* age = std::getenv("RBQ_GAST_POSE_MAX_AGE_MS")) m_poseMaxAgeMs = std::stod(age);
+                    if (!std::isfinite(m_poseMaxAgeMs) || m_poseMaxAgeMs <= 0) throw std::runtime_error("invalid pose max age");
+                    if (const char* path = std::getenv("RBQ_GAST_POSE_LOG")) {
+                        m_poseLog.open(path);
+                        m_poseLog << "now_ms seq source_ms age_ms used x y yaw packets stale max_age_ms\n";
+                    }
+                    FILE_LOG_AS(logINFO, "RLWALK") << "ODM1 pose port=" << posePort << " max_age_ms=" << m_poseMaxAgeMs;
+                }
                 m_gastMemory = std::make_unique<GastTerrainMemory>(width);
                 FILE_LOG_AS(logINFO, "RLWALK") << "GAST teacher: " << (m_scanSocket >= 0
                     ? std::string("external sensor map on udp ") + port : std::string("oracle full height grid"))
@@ -291,6 +305,7 @@ VisionStudentThread::VisionStudentThread(const std::string& studentOnnxPath, int
 VisionStudentThread::~VisionStudentThread() {
     m_shutdown.store(true, std::memory_order_release);
     if (m_thread.joinable()) m_thread.join();
+    if (m_poseSocket >= 0) ::close(m_poseSocket);
 }
 
 bool VisionStudentThread::latestDebug(DebugSnapshot& out) const {
@@ -798,11 +813,39 @@ void VisionStudentThread::gastStep(const Ort::MemoryInfo& mem, int& tick) {
     TimedPose latest{};
     {
         std::lock_guard<std::mutex> lock(m_poseMtx);
-        if (m_poses.empty()) return;
-        latest = m_poses.back();
+        if (m_poses.empty() && m_poseSocket < 0) return;
+        if (!m_poses.empty()) latest = m_poses.back();
     }
     const int64_t now = nowMs();
-    if (now - latest.stampMs > 50 ||
+    bool poseUsed = true;
+    if (m_poseSocket >= 0) {
+        // Simulation odometry seam: replace this receiver with real /odom later.
+        // Source timestamps are preserved; never fall back to SimInfo on missing/stale ODM1.
+        std::array<char, 64> packet{};
+        for (;;) {
+            const auto n = ::recv(m_poseSocket, packet.data(), packet.size(), 0);
+            if (n < 0) break;
+            if (n != 32 || std::memcmp(packet.data(), "ODM1", 4)) continue;
+            uint32_t seq; double stamp; std::array<float,4> values{};
+            std::memcpy(&seq, packet.data()+4, 4); std::memcpy(&stamp, packet.data()+8, 8);
+            std::memcpy(values.data(), packet.data()+16, 16);
+            if (!std::isfinite(stamp) || stamp <= m_odomStampMs || stamp > now + 5 ||
+                !std::all_of(values.begin(), values.end(), [](float x){return std::isfinite(x);})) continue;
+            m_odomSeq = seq; m_odomStampMs = static_cast<int64_t>(stamp); m_odom = values; ++m_odomPackets;
+        }
+        poseUsed = m_odomPackets > 0 && now - m_odomStampMs <= m_poseMaxAgeMs;
+        if (!poseUsed) ++m_odomStale;
+        latest.pos = {m_odom[0], m_odom[1], m_odom[2]};
+        latest.quat = {std::cos(m_odom[3]/2), 0.f, 0.f, std::sin(m_odom[3]/2)};
+        latest.stampMs = poseUsed ? m_odomStampMs : now;
+        if (m_poseLog.is_open()) {
+            m_poseLog << now << ' ' << m_odomSeq << ' ' << m_odomStampMs << ' ' << now-m_odomStampMs << ' '
+                << poseUsed << ' ' << m_odom[0] << ' ' << m_odom[1] << ' ' << m_odom[3] << ' '
+                << m_odomPackets << ' ' << m_odomStale << ' ' << m_poseMaxAgeMs << '\n';
+            if (tick % 100 == 0) m_poseLog.flush();
+        }
+    }
+    if ((m_poseSocket < 0 && now - latest.stampMs > 50) ||
         !std::all_of(latest.pos.begin(), latest.pos.end(), [](float v){ return std::isfinite(v); }) ||
         !std::all_of(latest.quat.begin(), latest.quat.end(), [](float v){ return std::isfinite(v); })) return;
     try {
@@ -811,7 +854,7 @@ void VisionStudentThread::gastStep(const Ort::MemoryInfo& mem, int& tick) {
         if (m_scanSocket >= 0) {
             // External sensor map: the sidecar already models sensor, transport and mapper; no extra terrain noise.
             // A missing/stale map (> 300 ms) is an empty scan: exact zero latent, as a training blackout.
-            const bool used = readExternalScan(width) && now - m_extStampMs <= 300;
+            const bool used = readExternalScan(width) && now - m_extStampMs <= 300 && poseUsed;
             if (used) std::copy(m_extScan.begin(), m_extScan.end(), scan.begin());
             else ++m_extStale;
             if (m_scanLog.is_open()) {
@@ -830,6 +873,7 @@ void VisionStudentThread::gastStep(const Ort::MemoryInfo& mem, int& tick) {
         }
         const auto& q = latest.quat;  // wxyz
         const float yaw = std::atan2(2 * (q[0]*q[3] + q[1]*q[2]), 1 - 2 * (q[2]*q[2] + q[3]*q[3]));
+        // Same memory/encoder contract as GT mode, substituting latest odometry only.
         auto in = m_gastMemory->step(latest.stampMs, scan, {latest.pos[0], latest.pos[1], yaw});
         const int valid = std::count(scan.begin() + TerrainScan::kPoints, scan.begin() + 2 * TerrainScan::kPoints, 1.f);
         if (tick++ % 200 == 0)
@@ -855,7 +899,7 @@ void VisionStudentThread::gastStep(const Ort::MemoryInfo& mem, int& tick) {
         // A no-valid-cell scan gives an exact zero latent, as in training (not "no latent").
         std::memcpy(m_latentOut.data(), latent, sizeof(float) * kLatentDim);
         m_haveLatent = true;
-        m_latentStampMs = latest.stampMs;
+        m_latentStampMs = m_poseSocket >= 0 ? now : latest.stampMs;
     } catch (const Ort::Exception& e) {
         FILE_LOG_AS(logERROR, "RLWALK") << "GAST teacher inference failed: " << e.what();
     } catch (const std::exception& e) {

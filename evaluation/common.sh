@@ -81,4 +81,12 @@ start_stand() {
   local out=$1
   python3 "$RUNNER" --command start --seconds 10 --output "$out/start.json" > "$out/start.log" 2>&1 || { echo start failed; tail -3 "$out/start.log"; return 1; }
   python3 "$RUNNER" --command stand --seconds 12 --output "$out/stand.json" > "$out/stand.log" 2>&1 || { echo stand failed; return 1; }
+  if [ -n "${RBQ_GAST_POSE_READY:-}" ]; then
+    local ready=0
+    for i in $(seq 1 60); do
+      if [ -s "${RBQ_GAST_POSE_LOG:-/dev/null}" ] && awk 'NR>1 && $5==1 {ok=1} END {exit !ok}' "$RBQ_GAST_POSE_LOG"; then ready=1; break; fi
+      sleep 1
+    done
+    [ "$ready" = 1 ] || { echo 'ODM1 never reached Pilot; refusing WALK'; return 1; }
+  fi
 }

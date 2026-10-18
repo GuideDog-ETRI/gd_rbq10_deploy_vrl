@@ -15,8 +15,9 @@ mkdir -p "$OUT_DIR/runs" "$OUT_DIR/videos"
 classify() { python3 "$here/force4_classify.py" --finish-x 40.9 "$@"; }
 one() {  # one <runs dir> <video 0|1>: one trial, prints the run dir (empty if a Pilot was left over)
   local runs=$1
+  python3 "$here/sidecar_guard157.py" check --port "${RBQ_GAST_SCAN_UDP:-47610}" || return 1
   if pgrep -x CAMEL-Pilot >/dev/null; then echo "LEFTOVER PILOT -- abort" >&2; return 1; fi
-  VIDEO=$2 MODE=depth_ir MODEL="$MODEL" LAUNCHER="$LAUNCHER" OUT_DIR="$runs" bash "$here/force4_sensor.sh" > /dev/null 2>&1
+  VIDEO=$2 MODE=depth_ir MODEL="$MODEL" LAUNCHER="$LAUNCHER" OUT_DIR="$runs" bash "$here/force4_sensor.sh" > /dev/null 2>&1 || return 1
   ls -dt "$runs"/*/ 2>/dev/null | grep -v videos | head -1
   sleep 5
 }

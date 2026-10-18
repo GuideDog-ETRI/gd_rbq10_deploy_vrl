@@ -10,11 +10,14 @@ set -u
 here="$(cd "$(dirname "$0")" && pwd)"; REPO="$(cd "$here/.." && pwd)"
 : "${MODE:?lidar|lidar_ir|depth_ir}" "${MODEL:?}" "${LAUNCHER:?}" "${OUT_DIR:?}"
 export RBQ_GAST_SCAN_UDP=${RBQ_GAST_SCAN_UDP:-47610}
+python3 "$here/sidecar_guard157.py" check --port "$RBQ_GAST_SCAN_UDP" || exit 2
 XML="$REPO/simulation/terrains/gap_stairs_force4/environment.xml"
 SIF=${GD_LAB_SIF:-/home/user/workspace/gd_lab_isaaclab.sif}; PY=${GD_LAB_PYTHON:-/home/user/workspace/venv_apptainer/bin/python}
 mkdir -p "$OUT_DIR"; log="$OUT_DIR/sidecar_$(date +%H%M%S)_$MODE.jsonl"
+source "$here/pose_error157.sh"
+pose157_setup "${POSE_ERR:-off}" "$OUT_DIR/pose_err.jsonl" || exit 2
 setsid bash -c "'$REPO/build/tools/sim-state-probe' 3600 10 | apptainer exec '$SIF' env CUDA_VISIBLE_DEVICES='' OMP_NUM_THREADS=4 \
-  '$PY' '$REPO/simulation/mujoco/sensor_sidecar/sidecar.py' --mode $MODE --xml '$XML' --port $RBQ_GAST_SCAN_UDP --log '$log'" \
+  '$PY' '$REPO/simulation/mujoco/sensor_sidecar/sidecar.py' --mode $MODE --seed ${SEED:-42} $POSE_ARGS --xml '$XML' --port $RBQ_GAST_SCAN_UDP --log '$log'" \
   > "$OUT_DIR/sidecar_$MODE.out" 2>&1 &
 SIDE=$!
 sleep 3
@@ -22,4 +25,8 @@ TAG_EXTRA="_${MODE}" MODEL="$MODEL" LAUNCHER="$LAUNCHER" OUT_DIR="$OUT_DIR" bash
 kill -TERM -- -$SIDE 2>/dev/null; sleep 1; kill -KILL -- -$SIDE 2>/dev/null
 last=$(ls -dt "$OUT_DIR"/*"_${MODE}"*/ 2>/dev/null | head -1)   # run directories only (the sidecar log matches too)
 [ -d "$last" ] && mv "$log" "$last/sidecar.jsonl" && mv "$OUT_DIR/sidecar_$MODE.out" "$last/sidecar.out"
+if [ -d "$last" ] && [ -f "$OUT_DIR/pose_err.jsonl" ]; then
+  mv "$OUT_DIR/pose_err.jsonl" "$OUT_DIR/pilot_pose.log" "$last/"
+  python3 "$here/pose_error157_report.py" "$last"
+fi
 exit $rc
