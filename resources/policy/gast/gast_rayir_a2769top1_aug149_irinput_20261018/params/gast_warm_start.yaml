@@ -1,0 +1,65 @@
+origin:
+  source: /data/users/bsseo/gd_lab_vrl_worktrees/gast-v21-20261007/gast/logs/gast/arm4/2026-10-07_11-02-05_gast_gapclean_from_bivt_train/model_2000.pt
+  source_sha256: db500e96ddf2325d415ac960417d2e34417ded87d804f630ae165675eaba24b4
+  source_sha256_expected: db500e96ddf2325d415ac960417d2e34417ded87d804f630ae165675eaba24b4
+  source_iteration: 2000
+  source_task: Gd-GastGapCleanV21-Rbq10-Dreamwaq-v0
+  source_kind: gast_v21
+  cenet_optimizer_restored: true
+  latent_head_zeroed: false
+  ppo_optimizer: new
+  learning_rates:
+    policy: 0.0001
+    terrain: 0.001
+  copied: 69
+  widened:
+  - 'terrain_encoder.cnn.0.weight: (8, 2, 3, 3) -> (8, 3, 3, 3) (new input channels
+    zero)'
+  terrain_levels_restored: true
+  task: Gd-GastRayIrV21-Rbq10-Dreamwaq-v0
+  train_arm_env: '4'
+  reward_weights:
+    platform_gap_foot_drop: -2.0
+    platform_gap_crossing: 0.5
+    platform_gap_monitor: 1.0
+    platform_gap_intrusion: -3.0
+    platform_gap_clean: 0.5
+    gap_foothold_margin: -0.25
+    stair_foothold_margin: -0.2
+    gap_slot_probe: -1.0
+    stair_handle_disturbance: -1.0
+    stair_push_fall: -3.0
+    stair_push_slip: -0.2
+  learning_rates_requested:
+    policy: 0.0001
+    terrain: 0.001
+  schedule: fixed
+resumed_from:
+  checkpoint: /data/users/bsseo/gd_lab_vrl_worktrees/aug149/checkpoints/teachers/gast/rayir_top5_20261016/2769_from2000/best_top5/2769_top1.pt
+  iteration: 2769
+task: Gd-GastRayIrV21-Rbq10-Dreamwaq-v0
+train_arm_env: '4'
+reward_weights:
+  platform_gap_foot_drop: -2.0
+  platform_gap_crossing: 0.5
+  platform_gap_monitor: 1.0
+  platform_gap_intrusion: -3.0
+  platform_gap_clean: 0.5
+  gap_foothold_margin: -0.25
+  stair_foothold_margin: -0.2
+  gap_slot_probe: -1.0
+  stair_handle_disturbance: -1.0
+  stair_push_fall: -3.0
+  stair_push_slip: -0.2
+learning_rates_requested:
+  policy: 0.0001
+  terrain: 0.001
+learning_rates:
+  policy: 0.0001
+  terrain: 0.001
+schedule: fixed
+mapper_augmentation:
+  mapper_aug_enabled: true
+  mapper_aug_ramp_steps: 50000
+  mapper_aug_clean_fraction: 0.25
+  mapper_aug_seed: 14942

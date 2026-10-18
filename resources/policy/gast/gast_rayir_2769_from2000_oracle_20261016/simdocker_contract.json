@@ -1,0 +1,240 @@
+{
+  "schema": "simdocker.gast.oracle.v1",
+  "simulation_only": true,
+  "onnx_sha256": {
+    "policy_vrl.onnx": "9b58dc36e522dd90a610e9c8e22da72bc29fda70899fcccd91c4ae08d1e2f002",
+    "gast_encoder.onnx": "62f472d46e1ff7c0c3b8655b455e21f522443aea242bd82f0f5a09f366db2f06"
+  },
+  "joint_names": [
+    "FL_HIP",
+    "FR_HIP",
+    "HL_HIP",
+    "HR_HIP",
+    "FL_THIGH",
+    "FR_THIGH",
+    "HL_THIGH",
+    "HR_THIGH",
+    "FL_KNEE",
+    "FR_KNEE",
+    "HL_KNEE",
+    "HR_KNEE"
+  ],
+  "default_joint_pos": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.76,
+    0.76,
+    0.76,
+    0.76,
+    -1.45,
+    -1.45,
+    -1.45,
+    -1.45
+  ],
+  "policy_dt": 0.01,
+  "action": {
+    "scale": [
+      0.25,
+      0.25,
+      0.25,
+      0.25,
+      0.25,
+      0.25,
+      0.25,
+      0.25,
+      0.25,
+      0.25,
+      0.25,
+      0.25
+    ],
+    "offset": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.76,
+      0.76,
+      0.76,
+      0.76,
+      -1.45,
+      -1.45,
+      -1.45,
+      -1.45
+    ],
+    "clip": [
+      -5.0,
+      5.0
+    ],
+    "previous_action": "clipped",
+    "kp": [
+      123.39,
+      123.39,
+      123.39,
+      123.39,
+      123.39,
+      123.39,
+      123.39,
+      123.39,
+      127.77,
+      127.77,
+      127.77,
+      127.77
+    ],
+    "kd": [
+      2.4,
+      2.4,
+      2.4,
+      2.4,
+      2.4,
+      2.4,
+      2.4,
+      2.4,
+      2.4,
+      2.4,
+      2.4,
+      2.4
+    ],
+    "effort_limits": [
+      93.6,
+      93.6,
+      93.6,
+      93.6,
+      93.6,
+      93.6,
+      93.6,
+      93.6,
+      126.0,
+      126.0,
+      126.0,
+      126.0
+    ]
+  },
+  "grid": {
+    "nx": 17,
+    "ny": 11,
+    "x0": -0.8,
+    "y0": -0.5,
+    "resolution": 0.1,
+    "order": "x_fastest",
+    "frame": "base_yaw"
+  },
+  "encoding": {
+    "height_scale": 5.0,
+    "height_offset": 0.5,
+    "metric_clip": [
+      -1.0,
+      1.0
+    ],
+    "z_reference": "base_origin",
+    "invalid": 0.0,
+    "ir": "zero_in_graph"
+  },
+  "terrain_history": {
+    "offsets": [
+      48,
+      32,
+      16,
+      8,
+      4,
+      2,
+      1,
+      0
+    ],
+    "capture_period_ms": 100,
+    "slots": 49,
+    "empty_age_s": 5.0
+  },
+  "observation": {
+    "direct": 46,
+    "cenet": 230,
+    "history": 5,
+    "layout": "step_major",
+    "history_initialization": "zeros",
+    "terms": [
+      "angular_velocity",
+      "gravity",
+      "command",
+      "joint_position_rel",
+      "joint_velocity",
+      "previous_action",
+      "payload"
+    ],
+    "sizes": [
+      3,
+      3,
+      3,
+      12,
+      12,
+      12,
+      1
+    ],
+    "scales": [
+      [
+        0.25,
+        0.25,
+        0.25
+      ],
+      [
+        1.0,
+        1.0,
+        1.0
+      ],
+      [
+        2.0,
+        2.0,
+        0.25
+      ],
+      [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      [
+        0.05,
+        0.05,
+        0.05,
+        0.05,
+        0.05,
+        0.05,
+        0.05,
+        0.05,
+        0.05,
+        0.05,
+        0.05,
+        0.05
+      ],
+      [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      [
+        0.2
+      ]
+    ],
+    "clip": null,
+    "normalization": "in_graph",
+    "noise": "off; Pilot simulation noise is opt-in and not reconstructed"
+  },
+  "source": "PolicyBackendVrl.cpp + GastTerrainMemory.hpp + TerrainScan::observeFull"
+}

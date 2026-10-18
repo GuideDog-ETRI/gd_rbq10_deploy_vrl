@@ -31,7 +31,15 @@ Pilot drops a map older than 300 ms (empty scan -> zero latent). Nothing here se
 import argparse, json, math, os, re, socket, struct, sys, threading, time
 from pathlib import Path
 
+# These ray/sphere products have an inner dimension of only 3. A BLAS thread
+# team costs more than the work and competes with the 100 Hz sampler. Apply the
+# default before NumPy is imported; an explicit operator setting is respected.
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
 import numpy as np
+import multiprocessing
+import copy
+import queue as queue_module
 
 HERE = Path(__file__).resolve().parent
 TRAIN = Path(os.environ.get("GD_LAB_TRAIN_ROOT", HERE.parents[3] / "gd_lab_vrl")).resolve()
@@ -73,7 +81,6 @@ def load_boxes(xml):
 def cast_boxes(lo, hi, starts, dirs, max_dist=10.):
     """Distance to the first box along each ray (inf when none). starts [N,3], dirs [N,3] unit."""
     centre = starts[:, :2].mean(0)
-    reach = np.maximum(np.abs(hi[:, :2] - centre), np.abs(lo[:, :2] - centre))  # farthest corner per axis
     gap = np.maximum(0, np.maximum(lo[:, :2] - centre, centre - hi[:, :2]))      # nearest distance per axis
     near = np.hypot(*gap.T) < max_dist + np.ptp(starts[:, :2], 0).max()
     lo, hi = lo[near], hi[near]
@@ -81,10 +88,17 @@ def cast_boxes(lo, hi, starts, dirs, max_dist=10.):
         return np.full(len(starts), np.inf)
     lo, hi, starts = lo.astype(np.float32), hi.astype(np.float32), starts.astype(np.float32)
     inv = (1.0 / np.where(np.abs(dirs) < 1e-12, 1e-12, dirs)).astype(np.float32)
-    t1 = (lo[None] - starts[:, None]) * inv[:, None]
-    t2 = (hi[None] - starts[:, None]) * inv[:, None]
-    tmin = np.minimum(t1, t2).max(-1)
-    tmax = np.maximum(t1, t2).min(-1)
+    # Same float32 subtract/multiply and extrema, without the [rays, boxes, 3]
+    # temporaries. Retain the original coarse cull (including its boundary rule).
+    for axis in range(3):
+        t1 = (lo[None, :, axis] - starts[:, None, axis]) * inv[:, None, axis]
+        t2 = (hi[None, :, axis] - starts[:, None, axis]) * inv[:, None, axis]
+        lower, upper = np.minimum(t1, t2), np.maximum(t1, t2)
+        if axis == 0:
+            tmin, tmax = lower, upper
+        else:
+            np.maximum(tmin, lower, out=tmin)
+            np.minimum(tmax, upper, out=tmax)
     hit = (tmax >= np.maximum(tmin, 0)) & (tmin <= max_dist)
     return np.where(hit, np.maximum(tmin, 0), np.inf).min(1).astype(float)
 
@@ -170,16 +184,21 @@ class Sidecar:
     def __init__(self, a):
         self.mode, self.ir = a.mode, a.mode.endswith("_ir")
         self.lo, self.hi = load_boxes(a.xml)
-        self.provenance = JsonSink(a.provenance, a.provenance_max_mb * 1024**2) if getattr(a, "provenance", None) else None
+        self.recorder = _RecordProcess() if self.mode == "depth_ir" and (getattr(a, "raw", None) or getattr(a, "provenance", None)) else None
+        self.provenance = None
+        if getattr(a, "provenance", None):
+            self.provenance = self.recorder.sink("provenance", a.provenance, a.provenance_max_mb * 1024**2) if self.recorder else JsonSink(a.provenance, a.provenance_max_mb * 1024**2)
         self.maps = lidar126.Maps(1, "L0S", provenance=self.provenance)
         self.raw = None
         if getattr(a, "raw", None):
             import hashlib
             import heightmap116, heightmap119z
             modules = [lidar126, structure130, heightmap116, heightmap119z]
-            self.raw = RawWriter(a.raw, dict(version=1, mode=a.mode, map=a.map, seed=a.seed,
+            metadata = dict(version=1, mode=a.mode, map=a.map, seed=a.seed,
                 mapper_config=structure130.S, noise_config=repr(NOISE), sensor_count=lidar126.SENSOR_COUNT,
-                sources={m.__name__:dict(path=m.__file__, sha256=hashlib.sha256(Path(m.__file__).read_bytes()).hexdigest()) for m in modules}), a.raw_max_mb * 1024**2)
+                sources={m.__name__:dict(path=m.__file__, sha256=hashlib.sha256(Path(m.__file__).read_bytes()).hexdigest()) for m in modules})
+            self.raw = self.recorder.sink("raw", a.raw, a.raw_max_mb * 1024**2, metadata) if self.recorder else RawWriter(a.raw, metadata, a.raw_max_mb * 1024**2)
+        self.capture_seed = a.seed
         self.rng = np.random.default_rng(a.seed)              # capture worker only
         self.rng_ir = np.random.default_rng(a.seed + 1)       # main thread (IR proxy)
         self.materials = Materials(a.seed * 7919 + 136)
@@ -289,7 +308,7 @@ class Sidecar:
         z = surface(self.lo, self.hi, xy)
         finite = np.isfinite(z)
         pts = np.c_[xy, np.where(finite, z, 0.)]
-        positions, _, _ = self.camera_rays(pos, Rb)
+        positions = pos + self.cam_p @ Rb.T  # identical origins; IR does not use the full image rays
         rots = np.einsum("ij,cjk->cik", Rb, rotation(self.cam_q))
         c, r = leg_spheres(pos, Rb, q)
         best_r = np.full(CELLS, np.inf); best_l = np.zeros((CELLS, 3)); seen = np.zeros(CELLS, bool)
@@ -314,7 +333,8 @@ class Sidecar:
         keep = valid & seen & finite & (self.rng_ir.random(CELLS) > IR_DROP)
         return np.where(keep, IR_FLOOR + (1 - IR_FLOOR) * inten, 0.).astype(np.float32)
 
-    # -- loop: the main thread samples every probe line; a worker captures every 100 ms --
+    # -- main thread samples each probe line; a thread schedules 100 ms captures.
+    # Depth computation + its RNG run in one persistent spawned process. --
     def trace(self, **kw):
         """--trace: one JSON line per capture / integrate / send (UPDATE140 timing and pose record).
         Monotonic times (pose_mono, start, end, eligible, at, stamp) share one clock; *_wall are time.time();
@@ -327,10 +347,56 @@ class Sidecar:
         self.stop_worker = threading.Event()
         self.lock = threading.Lock(); self.latest = None; self.latest_src = {}; self.state_cv = threading.Condition()
         self.last_cid = None
-        self.worker = threading.Thread(target=self.capture_loop, daemon=True)
+        self.capture_process = None
+        if self.mode == "depth_ir":
+            context = multiprocessing.get_context("spawn")
+            fields = ("lo", "hi", "cam_p", "cam_q", "cw", "ch", "cam_local", "K", "capture_seed")
+            config = {k: getattr(self, k) for k in fields}
+            layout = _depth_layout(config)
+            self.capture_slot_bytes = int(sum(np.prod(shape) * np.dtype(dtype).itemsize for _, shape, dtype in layout))
+            slots = 16
+            self.capture_buffer = context.RawArray("B", slots * self.capture_slot_bytes)
+            self.capture_views = [_depth_views(self.capture_buffer, layout, i * self.capture_slot_bytes) for i in range(slots)]
+            self.capture_pose = context.Array("d", 32)
+            self.capture_available = context.Event()
+            self.capture_stop = context.Event()
+            self.capture_results = context.Queue()
+            self.capture_free = context.Queue()
+            for i in range(slots): self.capture_free.put(i)
+            self.capture_process = context.Process(target=_depth_clock,
+                args=(config, self.capture_buffer, self.capture_pose, self.capture_available,
+                      self.capture_stop, self.capture_results, self.capture_free, slots))
+            self.capture_process.start()
+            status = self.capture_results.get()
+            if status != "ready":
+                self.capture_stop.set(); self.capture_process.join()
+                raise RuntimeError(f"depth process startup failed: {status}")
+        self.worker_error = None
+        self.worker = threading.Thread(target=self._capture_guard, daemon=True)
         self.worker.start()
 
+    def _capture_guard(self):
+        try:
+            self.capture_loop()
+        except BaseException as exc:
+            self.worker_error = exc
+            self.stop_worker.set()
+
+    def close_worker(self):
+        self.stop_worker.set()
+        if self.capture_process is not None:
+            self.capture_stop.set(); self.capture_available.set()
+        with self.state_cv:
+            self.state_cv.notify_all()
+        self.worker.join()  # finish any in-flight packet/raw record before closing sinks
+        if self.capture_process is not None:
+            self.capture_process.join()
+            for channel in (self.capture_results, self.capture_free):
+                channel.close(); channel.join_thread()
+
     def capture_loop(self):
+        if self.capture_process is not None:
+            return self._depth_receive_loop()
         while not self.stop_worker.is_set():
             with self.state_cv:
                 self.state_cv.wait_for(lambda: self.latest is not None or self.stop_worker.is_set())
@@ -344,16 +410,17 @@ class Sidecar:
             if now < self.next_capture:
                 time.sleep(min(.005, self.next_capture - now)); continue
             t0 = time.perf_counter()
-            packet = self.depth_packet(pos, quat, Rb, q)[0] if self.mode == "depth_ir" else \
-                self.lidar_packet(pos, quat, Rb, q, row_time)
+            packet = self.lidar_packet(pos, quat, Rb, q, row_time)
             done = time.monotonic()
             self.stats["capture_ms"].append(1000 * (time.perf_counter() - t0)); self.stats["captures"] += 1
-            cid = self.stats["captures"]; drop = self.rng.random() < .05
+            cid = self.stats["captures"]
+            drop = self.rng.random() < .05
+            delay = None if drop else int(self.rng.integers(0, 16))
             eligible = None
             if drop:
                 self.stats["dropped"] += 1
             else:  # delivered after the transport delay, never before the computation finished
-                eligible = max(row_time + .01 * self.rng.integers(0, 16), done)
+                eligible = max(row_time + .01 * delay, done)
                 self.queue.append((eligible, row_time, packet, cid))
             if self.raw:
                 self.raw.write("capture", dict(id=cid, pose_mono=row_time, start=now, end=done, eligible=eligible, dropped=drop, **src), packet)
@@ -362,6 +429,39 @@ class Sidecar:
             late = now - self.next_capture
             self.next_capture = now + .1 if late >= .1 else self.next_capture + .1
             self.stats["late_captures"] = self.stats.get("late_captures", 0) + int(late >= .1)
+
+    def _depth_receive_loop(self):
+        # The child owns the 10 Hz clock as well as the computation. Map locking,
+        # Python serialization and main-thread scheduling cannot postpone a capture.
+        while True:
+            try:
+                item = self.capture_results.get(timeout=.005)
+            except queue_module.Empty:
+                if not self.capture_process.is_alive():
+                    raise RuntimeError(f"depth process exited: {self.capture_process.exitcode}")
+                self.deliver(time.monotonic())
+                continue
+            if item is None:
+                return
+            if isinstance(item, str):
+                raise RuntimeError(item)
+            slot, cid, row_time, start, done, dropped, delay, late, src = item
+            packet = {key: value.copy() for key, value in self.capture_views[slot].items()}
+            self.capture_free.put(slot)
+            self.stats["capture_ms"].append(1000 * (done - start))
+            self.stats["captures"] += 1
+            self.stats["dropped"] += int(dropped)
+            self.stats["late_captures"] = self.stats.get("late_captures", 0) + int(late >= .1)
+            eligible = None if dropped else max(row_time + .01 * delay, done)
+            if not dropped:
+                self.queue.append((eligible, row_time, packet, cid))
+            if self.raw:
+                self.raw.write("capture", dict(id=cid, pose_mono=row_time, start=start, end=done,
+                    eligible=eligible, dropped=dropped, **src), packet)
+            pos = packet["body_pos"][0]
+            self.trace(ev="capture", id=cid, pose_mono=row_time, start=start, end=done,
+                eligible=eligible, dropped=dropped, x=float(pos[0]), y=float(pos[1]), z=float(pos[2]), **src)
+            self.deliver(time.monotonic())
 
     def deliver(self, now):
         """Worker thread: integrate the packets whose delivery time has come, in capture order."""
@@ -380,6 +480,8 @@ class Sidecar:
             self.stats.setdefault("integrate_ms", []).append(1000 * (time.perf_counter() - t0))
 
     def step(self, row):
+        if self.worker_error is not None:
+            raise RuntimeError("sensor capture worker failed") from self.worker_error
         now = time.monotonic()
         pos = np.array(row["pos"], float)
         x, y, z, w = row["imu_xyzw"]; quat = np.array([w, x, y, z], float)
@@ -389,6 +491,13 @@ class Sidecar:
         src = dict(src_wall=row.get("wall"), src_count=row.get("count"), recv_wall=time.time())
         with self.state_cv:
             self.latest = (now, pos, quat, Rb, q); self.latest_src = src; self.state_cv.notify()
+        if self.capture_process is not None:
+            values = np.r_[now, pos, quat, Rb.ravel(), q,
+                np.nan if src["src_wall"] is None else src["src_wall"],
+                np.nan if src["src_count"] is None else src["src_count"], src["recv_wall"]]
+            with self.capture_pose.get_lock():
+                self.capture_pose[:] = values
+            self.capture_available.set()
         t0 = time.perf_counter()
         with self.lock:
             self.maps.provenance_context = dict(sample_seq=self.seq + 1)
@@ -425,6 +534,193 @@ class Sidecar:
             self.log.flush()
 
 
+def _depth_layout(config):
+    n, h, w = len(config["cam_p"]), config["ch"], config["cw"]
+    return [("origins", (1, n, 3), "float64"), ("dirs", (1, n, h, w, 3), "float64"),
+            ("ranges", (1, n, h, w), "float64"), ("valid", (1, n, h, w), "bool"),
+            ("body_pos", (1, 3), "float64"), ("body_quat", (1, 4), "float64"),
+            ("self_hit", (1, n, h, w), "bool")]
+
+
+def _depth_views(buffer, layout, offset=0):
+    views = {}
+    for key, shape, dtype in layout:
+        views[key] = np.ndarray(shape, dtype=dtype, buffer=buffer, offset=offset)
+        offset += views[key].nbytes
+    return views
+
+
+def _depth_clock(config, buffer, latest, available, stop, results, free_slots, slots):
+    try:
+        _init_depth_process(config)
+        layout = _depth_layout(config)
+        size = int(sum(np.prod(shape) * np.dtype(dtype).itemsize for _, shape, dtype in layout))
+        views = [_depth_views(buffer, layout, i * size) for i in range(slots)]
+        results.put("ready")
+        available.wait()
+        deadline, cid = None, 0
+        while not stop.is_set():
+            now = time.monotonic()
+            if deadline is None: deadline = now
+            if now < deadline:
+                stop.wait(min(.005, deadline - now)); continue
+            try:
+                slot = free_slots.get(timeout=.01)
+            except queue_module.Empty:
+                continue  # bounded backpressure; no overwrite or loss of raw packets
+            with latest.get_lock():
+                state = np.array(latest[:], dtype=float)
+            row_time = state[0]; pos=state[1:4]; quat=state[4:8]; rb=state[8:17].reshape(3,3); q=state[17:29]
+            src = dict(src_wall=None if np.isnan(state[29]) else float(state[29]),
+                       src_count=None if np.isnan(state[30]) else int(state[30]), recv_wall=float(state[31]))
+            start = time.monotonic()
+            packet, dropped, delay = _depth_capture((pos, quat, rb, q))
+            for key, value in packet.items(): np.copyto(views[slot][key], value, casting="no")
+            done = time.monotonic(); cid += 1; late = start - deadline
+            results.put((slot, cid, row_time, start, done, dropped, delay, late, src))
+            deadline = start + .1 if late >= .1 else deadline + .1
+    except BaseException as exc:
+        results.put(f"depth capture failed: {exc!r}")
+    finally:
+        results.put(None)
+
+
+def _record_plain(value):
+    # JsonSink's normalization, but finite numeric arrays already become native
+    # JSON scalars via tolist(): avoid a Python call for every point coordinate.
+    if isinstance(value, np.ndarray):
+        if value.dtype.kind in "biuSU": return value.tolist()
+        if value.dtype.kind == "f":
+            finite = np.isfinite(value)
+            if finite.all(): return value.tolist()
+            result = value.astype(object); result[~finite] = None
+            return result.tolist()
+        return _record_plain(value.tolist())
+    if isinstance(value, np.generic): return _record_plain(value.item())
+    if isinstance(value, float) and not np.isfinite(value): return None
+    if isinstance(value, dict): return {str(k): _record_plain(v) for k, v in value.items()}
+    if isinstance(value, (tuple, list)): return [_record_plain(v) for v in value]
+    return value
+
+
+def _record_loop(commands, capped):
+    import provenance145
+    provenance145.plain = _record_plain
+    sinks = {}
+    try:
+        while True:
+            command = commands.get()
+            if command is None:
+                break
+            kind, operation, args = command
+            if operation == "init":
+                path, limit, metadata = args
+                sinks[kind] = RawWriter(path, metadata, limit) if kind == "raw" else JsonSink(path, limit)
+            elif operation == "close":
+                sinks.pop(kind).close()
+            elif operation == "emit_data":
+                event, data = args
+                sinks[kind].emit(event, **data)
+            else:
+                getattr(sinks[kind], operation)(*args)
+            if kind in sinks and sinks[kind].capped:
+                capped[kind].set()
+    finally:
+        for sink in sinks.values():
+            sink.close()
+
+
+class _AsyncSink:
+    def __init__(self, owner, kind):
+        self.owner, self.kind = owner, kind
+
+    def write(self, event, meta=None, arrays=None):
+        if not self.owner.capped[self.kind].is_set():
+            self.owner.send(self.kind, "write", (event, meta, arrays))
+
+    def emit(self, event, **data):
+        # JsonSink.emit takes kwargs; the worker uses a small adapter message.
+        if not self.owner.capped[self.kind].is_set():
+            self.owner.send(self.kind, "emit_data", (event, data))
+
+    def close(self):
+        self.owner.send(self.kind, "close", ())
+
+
+class _RecordProcess:
+    """One ordered, bounded stream; snapshot arrays before later map mutations.
+    File formats, byte caps and clean-end markers are still the original writers.
+    """
+    def __init__(self):
+        context = multiprocessing.get_context("spawn")
+        self.commands = context.Queue(maxsize=256)
+        self.lock = threading.Lock()
+        self.capped = {kind: context.Event() for kind in ("raw", "provenance")}
+        self.process = context.Process(target=_record_loop, args=(self.commands, self.capped))
+        self.process.start()
+
+    def send(self, kind, operation, args):
+        with self.lock:
+            command = (kind, operation, copy.deepcopy(args))
+            while True:
+                if not self.process.is_alive():
+                    self.commands.cancel_join_thread(); self.commands.close(); self.process.join()
+                    raise RuntimeError(f"sensor recorder exited: {self.process.exitcode}")
+                try:
+                    self.commands.put(command, timeout=.1)
+                    return
+                except queue_module.Full:
+                    continue
+
+    def sink(self, kind, path, limit, metadata=None):
+        self.send(kind, "init", (path, limit, metadata))
+        return _AsyncSink(self, kind)
+
+    def close(self):
+        while self.process.is_alive():
+            try:
+                self.commands.put(None, timeout=.1)
+                break
+            except queue_module.Full:
+                continue
+        self.process.join()
+        if self.process.exitcode:
+            self.commands.cancel_join_thread()
+            self.commands.close()
+            raise RuntimeError(f"sensor recorder exited: {self.process.exitcode}")
+        self.commands.close()
+        self.commands.join_thread()
+
+
+# Only immutable geometry/camera arrays cross at startup. The capture process owns
+# its RNG, including transport draws, preserving the original single RNG stream.
+# Map state, IR RNG, sockets and all recording sinks stay in the parent.
+_DEPTH_SENSOR = None
+
+
+def _init_depth_process(config):
+    global _DEPTH_SENSOR
+    from scipy import ndimage  # warm import, no RNG use
+    _DEPTH_SENSOR = Sidecar.__new__(Sidecar)
+    _DEPTH_SENSOR.__dict__.update(config)
+    _DEPTH_SENSOR.rng = np.random.default_rng(config["capture_seed"])
+    _DEPTH_SENSOR.capture_views = _depth_views(config["capture_buffer"], _depth_layout(config)) if "capture_buffer" in config else None
+
+
+def _depth_capture(pose):
+    if pose is None:
+        return None
+    sensor = _DEPTH_SENSOR
+    packet = sensor.depth_packet(*pose)[0]
+    drop = sensor.rng.random() < .05
+    delay = None if drop else int(sensor.rng.integers(0, 16))
+    if sensor.capture_views is not None:
+        for key, value in packet.items():
+            np.copyto(sensor.capture_views[key], value, casting="no")
+        packet = None
+    return packet, drop, delay
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--mode", choices=("lidar", "lidar_ir", "depth_ir"), required=True)
@@ -458,13 +754,16 @@ def main():
             if row.get("pos"):
                 car.step(row)
     finally:
-        car.stop_worker.set()
-        with car.state_cv: car.state_cv.notify_all()
-        car.worker.join()
+        car.close_worker()
         if car.raw: car.raw.close()
         if car.provenance: car.provenance.close()
+        if car.recorder: car.recorder.close()
         if car.payload: car.payload.flush(); car.payload.close()
         if car.trace_f: car.trace_f.close()
+        car.sock.close()
+        if car.log: car.log.close()
+    if car.worker_error is not None:
+        raise RuntimeError("sensor capture worker failed") from car.worker_error
 
 
 
