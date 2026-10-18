@@ -1,28 +1,39 @@
 # gd_rbq10_deploy_vrl
 
-RBQ10 비전 보행 정책(교사 oracle과 카메라 학생)을 MuJoCo와 실기에서 돌리는 배포 저장소다.
-블라인드(DWB) 배포는 `gd_rbq10_deploy`에 있다. 학습은 `gd_lab_vrl`에서 한다.
+RBQ10 비전 보행 정책을 MuJoCo(그리고 이후 실기)에서 돌리는 배포 저장소다. 현행 정책은 **GAST Ray+IR 교사 직결**이다.
+- 경로: 4× D4xx depth+IR → 센서 sidecar(camfilter136 → v25or 매퍼) → GSC2 UDP → Pilot의 8프레임 지형 기억 → `gast_encoder.onnx` + `policy_vrl.onnx`.
+- 관련 저장소: 블라인드(DWB) 배포는 `gd_rbq10_deploy`, 학습은 `gd_lab_vrl`.
+- 전체 설명: `gd_lab_vrl/docs/design/VISION_RL_OVERVIEW_20261018.pdf`.
+
+## Git에 있는 배포 묶음 (2026-10-18 정리)
+
+| 묶음 (`resources/policy/gast/`) | 실행기 | 내용 |
+|---|---|---|
+| `gast_rayir_3906_gap50_dwb38000_irinput_20261016` | `scripts/gast/teacher/gast_rayir_3906/run_sim_ir.sh` | **원래 3906**, IR 입력(561), 센서 sidecar 필요 |
+| `gast_rayir_3906_gap50_dwb38000_oracle_20261016` | `scripts/gast/teacher/gast_rayir_3906/run_sim.sh` | 3906, 정답 지도 oracle(374, IR 0) |
+| `gast_rayir_a2769top1_aug149_irinput_20261018` | `scripts/gast/teacher/gast_rayir_a2769top1_aug149_irinput_20261018/run_sim_ir.sh` | **A2769_top1** (aug149 파인튠 3815), IR 입력 |
+
+- 다른 묶음의 `*.pt`·`*.onnx`는 로컬 서버에만 있다. 대상은 2769, aug149 A3906/C2769, GAST v2.1, BIVT, 학생, archive이며 `.gitignore`로 제외했고 과거 커밋에는 남아 있다. 이 묶음들의 실행기는 가중치가 있는 서버에서만 동작한다.
+- 새 묶음을 git에 올리려면 `git add -f`를 쓴다. mp4·webm은 넣지 않는다.
+- GAST 경로는 **시뮬레이션 전용**이다. Pilot은 `--interface lo --sim`에서만 GAST 모델을 받는다. 실기 pose는 camel_pilot `/odom`을 쓸 예정이고, 포팅할 때 구현한다.
 
 ## 실행
-
-모든 실행은 `scripts/<방법>/<묶음>/run_sim.sh` 하나로 한다. 전체 목록은 [scripts/README.md](scripts/README.md)에 있다.
 
 ```bash
 cmake -B build -S . -DCMAKE_BUILD_TYPE=Release           # 처음 한 번 (이후 빌드는 실행기가 한다)
 
-# 공개 묶음은 GAST v2.1 교사 oracle 두 개다 (resources/policy/INDEX.md): 26123 (다중 GPU Top-1), 2000.
-bash scripts/gast/teacher/gast_v21_mg26123_top1/run_sim.sh            # 기본 코스 (gap)
-bash scripts/gast/teacher/gast_v21_mg26123_top1/run_sim.sh force4     # 코스 지정
-bash scripts/gast/teacher/gast_v21_mg26123_top1/run_sim.sh --check    # 정적 검사만
-bash scripts/gast/teacher/gast_v21_mg26123_top1/run_sim.sh stop
-bash scripts/gast/teacher/gast_v21_2000/run_sim.sh stairs20           # 교사 2000
+# 조이스틱 리뷰 (센서 sidecar depth_ir + 계단 4지점 자동 외력): deploy/mujoco_review_20261018/
+cd deploy/mujoco_review_20261018
+bash 2_orig_3906/run_sim.sh                     # 기본: force4 코스, PAYLOAD_KG=6, 외력 150 N × 2 s
+FORCE=0 PAYLOAD_KG=5 bash 2_orig_3906/run_sim.sh   # 외력 없이 5 kg
+bash 2_orig_3906/run_sim.sh stop
+#   변수: PAYLOAD_KG, FORCE, UP_PULL_N, UP_PUSH_N, DOWN_PULL_N, DOWN_PUSH_N, FORCE_SEC, SEED
 
-RBQ_SIM_OBS_NOISE=1 RBQ_PAYLOAD_KG=0 bash scripts/gast/teacher/gast_v21_mg26123_top1/run_sim.sh force4  # 센서 노이즈, 탑재물 없음
-bash scripts/push.sh pull 200 0.6                                      # 계단 손잡이 당김 (MujocoGastSync)
-bash scripts/gast/teacher/gast_v21_mg26123_top1/run.sh                # force4 코스, 노이즈 켬, 6 kg — 조이스틱으로 직접 조종 (stop: run.sh stop)
-bash scripts/gast/teacher/gast_v21_2000/run.sh                        # 같은 환경, 교사 2000
-bash scripts/gast/teacher/gast_v21_mg26123_top1/run_force4.sh          # 20 cm 계단 외력 4종 시나리오 + 영상 (26123)
-bash scripts/gast/teacher/gast_v21_2000/run_force4.sh                  # 같은 시나리오, 교사 2000 (변수: evaluation/force4.sh)
+# 개별 실행기
+bash scripts/gast/teacher/gast_rayir_3906/run_sim_ir.sh force4    # IR 입력 묶음 (sidecar는 evaluation/force4_sensor.sh 참고)
+bash scripts/gast/teacher/gast_rayir_3906/run_sim.sh gap           # oracle 묶음
+bash scripts/gast/teacher/gast_rayir_3906/run_sim.sh --check       # 정적 검사만
+bash scripts/gast/teacher/gast_rayir_3906/run_sim.sh stop
 ```
 
 | 코스 | 지형 폴더 | 내용 |
@@ -39,14 +50,22 @@ bash scripts/gast/teacher/gast_v21_2000/run_force4.sh                  # 같은 
 
 ## 평가
 
-`evaluation/`이 같은 조건의 반복 평가를 한다. 결과는 git 밖의 `records/<이름>/<날짜>/`에 쌓인다.
+`evaluation/`이 같은 조건으로 반복 평가한다. 결과는 git 밖 `records/<이름>/`에 쌓인다.
+
+| 스크립트 | 내용 |
+|---|---|
+| `gapprefix.sh` | 갭 구간만(완주 x 12). arm A/B oracle 잡음 on/off, C 센서 지도, D 같은 일정의 GT 패킷, E 착지측 오차만 GT. `SENSOR=lidar\|depth_ir`, `SEED`, `RAW=1` |
+| `force4.sh`, `force4_sensor.sh` | force4 코스 + 4지점 핸들 외력, oracle / 센서 sidecar(`MODE=lidar\|lidar_ir\|depth_ir`) |
+| `force4_depthir_repeat.sh` | 고정 seed N회 반복(state만) + PASS/FAIL 영상 재실행 |
+| `force4_classify.py`, `fall_watch.py` | 궤적 판정(FINISH / GAP-PIT / FALL / STOP / INVALID), 조기 종료 |
+| `pilot_scan_report.py`, `sidecar_trace_report.py`, `sidecar_map_vs_gt.py` | 패킷 age·pose 차, 캡처 지연, 지도 vs GT 진단 |
 
 ```bash
-bash evaluation/eval_candidate.sh gast_v21_26123 3 scripts/gast/teacher/gast_v21_mg26123_top1/run_sim.sh
-#   갭 코스 vx 0.6/1.0/1.2 × N회 + 20 cm 계단 외력 5종 → records/gast_v21_26123/<날짜>/summary.txt
-GD_LAB_TRAIN_ROOT=<gd_lab_vrl> bash evaluation/milestone_eval.sh 5000
-#   서버 GAST 학습이 5,000 업데이트에 도달하면 Top-1을 받아 oracle 묶음으로 내보내고 평가
+ARM=C SENSOR=depth_ir SEED=42 MODEL=dwb38000_3906 LAUNCHER=scripts/gast/teacher/gast_rayir_3906/run_sim_ir.sh \
+  OUT_DIR=records/gapprefix_x bash evaluation/gapprefix.sh
 ```
+
+결과 정리: `docs/experiments/RAYIR_MUJOCO_SENSOR_20261016.md`.
 
 ## 학생 진단: 입력과 은닉 상태 디코딩
 
@@ -71,7 +90,8 @@ scripts/common/                    공통 실행기 run_sim_vrl.sh, 실기 run_r
 pilot/ console/ protocol/ include/ extern/   C++ 앱 (Pilot, 콘솔), 벤더 SDK·onnxruntime
 perception/common/                 VisionStudentThread: ONNX 입출력 개수로 네 계약을 고른다
 perception/oracle/                 교사 oracle 지형 입력 (BIVT-Ray 가시 마스크, GAST 전체 격자 + 기억)
-simulation/mujoco/                 Docker·MuJoCo, 동기 카메라 시뮬레이터 생성기 (sync/vrl, GAST는 prepare_gast_sync.py)
+simulation/mujoco/                 Docker·MuJoCo, 동기 카메라 시뮬레이터 생성기 (sync/vrl, GAST는 prepare_gast_sync.py), sensor_sidecar/ (depth_ir·LiDAR 매퍼 → GSC2)
+deploy/mujoco_review_20261018/     모델별 조이스틱 리뷰 실행기 (자동 외력)
 simulation/terrains/               코스
 evaluation/                        반복 평가 스크립트와 분석
 export/                            학습 체크포인트 → 배포 묶음 (ONNX + manifest, 패리티 검사)
@@ -84,7 +104,7 @@ records/                           시험 결과 (.gitignore)
 | ONNX 계약 | 모드 | 시뮬레이터 |
 |---|---|---|
 | 1 입력 → 1 출력 | BIVT-Ray 교사 oracle (카메라 가시 높이맵) | MujocoGastSync |
-| 4 입력 → 1 출력 | GAST 교사 oracle (전체 높이맵 + 8시점 기억) | MujocoGastSync |
+| 4 입력 → 1 출력 | GAST 교사 (frames 374 = oracle, 561 = Ray+IR 센서 입력 + 8시점 기억) | MujocoGastSync |
 | 2 입력 → 2 출력 | RVLD / GAVD 학생 (hidden 64) | MujocoVrlSync |
 | 5 입력 → 2 출력 | GAST 학생 (hidden 6116, 촬영 자세) | MujocoGastSync |
 
