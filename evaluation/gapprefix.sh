@@ -8,6 +8,8 @@
 #   ARM=E  as C, but landing-edge false-gap cells (real ground <= 10 cm beyond a far edge) get the GT height (diagnostic)
 # C / D also record <run>/sidecar_trace.jsonl, sidecar_payload.bin (every sent packet) and pilot_scan.log
 # (RBQ_GAST_SCAN_LOG: the packet seq / sample pose Pilot actually used at each GAST step, with its own pose).
+# SENSOR=lidar (default) | depth_ir for C/D/E: depth_ir = 4 belly cameras -> camfilter136 -> v25or + IR proxy and needs
+# the 561-wide IR-native bundle launcher (scripts/gast/teacher/gast_rayir_<M>/run_sim_ir.sh). The robot uses depth_ir.
 # RAW=1 (C/D/E): also sidecar_raw.bin (lossless captures + map operations, CPU replay) and mapper_provenance.jsonl.
 #   ARM=A SEED=42 MODEL=dwb38000_3906 LAUNCHER=scripts/gast/teacher/gast_rayir_3906/run_sim.sh OUT_DIR=... evaluation/gapprefix.sh
 # SEED feeds RBQ_SIM_OBS_NOISE_SEED (proprio stream; terrain stream seed+1) and, for C, the sidecar --seed.
@@ -18,7 +20,8 @@ VX=${VX:-1.0}; PAYLOAD_KG=${PAYLOAD_KG:-6}; WALK_S=${WALK_S:-60}
 export DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/$(id -u)/gdm/Xauthority}
 export FINISH_X=12.0 HOLD_S=2 RBQ_SIM_OBS_NOISE=1 RBQ_SIM_OBS_NOISE_SEED=$SEED RBQ_PAYLOAD_KG=$PAYLOAD_KG
 case $ARM in A) export RBQ_SIM_TERRAIN_NOISE=1 ;; B|C|D|E) export RBQ_SIM_TERRAIN_NOISE=0 ;; *) echo "ARM A|B|C|D|E" >&2; exit 2 ;; esac
-tag="${MODEL}_gapprefix5-30cm_vx${VX}_payload${PAYLOAD_KG}kg_noForce_arm${ARM}_seed${SEED}"
+SENSOR=${SENSOR:-lidar}
+tag="${MODEL}_gapprefix5-30cm_vx${VX}_payload${PAYLOAD_KG}kg_noForce_arm${ARM}$([ "$SENSOR" = lidar ] || echo "_$SENSOR")_seed${SEED}"
 run="$OUT_DIR/$tag"; mkdir -p "$OUT_DIR/videos"
 [ -e "$run" ] && run="${run}_$(date +%H%M%S)"
 SIDE=
@@ -29,13 +32,13 @@ if [ "$ARM" = C ] || [ "$ARM" = D ] || [ "$ARM" = E ]; then
   SIF=${GD_LAB_SIF:-/home/user/workspace/gd_lab_isaaclab.sif}; PY=${GD_LAB_PYTHON:-/home/user/workspace/venv_apptainer/bin/python}
   mkdir -p "$run"
   setsid bash -c "'$REPO/build/tools/sim-state-probe' 3600 10 | apptainer exec '$SIF' env CUDA_VISIBLE_DEVICES='' OMP_NUM_THREADS=4 \
-    '$PY' '$REPO/simulation/mujoco/sensor_sidecar/sidecar.py' --mode lidar --seed $SEED --xml '$REPO/simulation/terrains/gap_stairs_force4/environment.xml' \
+    '$PY' '$REPO/simulation/mujoco/sensor_sidecar/sidecar.py' --mode $SENSOR --seed $SEED --xml '$REPO/simulation/terrains/gap_stairs_force4/environment.xml' \
     --port $RBQ_GAST_SCAN_UDP --log '$run/sidecar.jsonl' --trace '$run/sidecar_trace.jsonl' \
     --map $MAP --payload '$run/sidecar_payload.bin' $RAWARGS" > "$run/sidecar.out" 2>&1 &
   SIDE=$!; sleep 3
 fi
-printf '{"arm":"%s","seed":%s,"model":"%s","launcher":"%s","terrain_noise":%s,"proprio_noise":1,"finish_x":12.0,"forces":[]}\n' \
-  "$ARM" "$SEED" "$MODEL" "$LAUNCHER" "$RBQ_SIM_TERRAIN_NOISE" > "$OUT_DIR/.manifest_$$"
+printf '{"arm":"%s","sensor":"%s","seed":%s,"model":"%s","launcher":"%s","terrain_noise":%s,"proprio_noise":1,"finish_x":12.0,"forces":[]}\n' \
+  "$ARM" "$SENSOR" "$SEED" "$MODEL" "$LAUNCHER" "$RBQ_SIM_TERRAIN_NOISE" > "$OUT_DIR/.manifest_$$"
 echo "[gapprefix] $tag"
 PULL_ARGS="--plan-json []" bash "$EVAL_DIR/stair_push.sh" "$run" "$VX" 1.0 "$WALK_S" -- "$LAUNCHER" force4
 mv "$OUT_DIR/.manifest_$$" "$run/manifest.json" 2>/dev/null

@@ -1,0 +1,160 @@
+{
+  "teacher_sha256": "cd6993f8104f6c77dea18259afd90c9d4d5db2b74733fa1e7d57f3101f5635c7",
+  "iteration": 4146,
+  "kind": "gast_teacher_oracle",
+  "policy_class": "gd_lab.gast.teacher:GastRayIrActorCritic",
+  "terrain_channels": 3,
+  "ir_channel": "input: frames[...,374:561] from the sensor sidecar (RBQ_GAST_SCAN_UDP)",
+  "frame_width": 561,
+  "actor_onnx_sha256": "d91af5683c70a82e2db00b9cb3816282ebd2a7ba5dee6da7907279f308fec8ad",
+  "encoder_onnx_sha256": "bb9229513ffb149d15730b58f824eea433e054d25ec5317684f99bfeedf0fa71",
+  "parity_max_abs_error": 6.818026304244995e-05,
+  "checks": {
+    "actor_0": 4.291534423828125e-06,
+    "actor_1": 3.814697265625e-06,
+    "actor_2": 2.86102294921875e-06,
+    "actor_3": 1.5497207641601562e-06,
+    "actor_4": 1.6540288925170898e-06,
+    "actor_5": 2.1457672119140625e-06,
+    "actor_6": 3.2186508178710938e-06,
+    "actor_7": 2.7418136596679688e-06,
+    "actor_8": 2.8312206268310547e-06,
+    "actor_9": 2.86102294921875e-06,
+    "actor_10": 3.7848949432373047e-06,
+    "actor_11": 1.9073486328125e-06,
+    "encoder_trajectory_700_max": 6.818026304244995e-05,
+    "encoder_blackout_zero_steps": 30
+  },
+  "history_offsets": [
+    48,
+    32,
+    16,
+    8,
+    4,
+    2,
+    1,
+    0
+  ],
+  "capture_period_s": 0.1,
+  "input_note": "full unmasked course height grid + 8-step ego-aligned memory, no noise; matches GAST teacher training input; simulation diagnostic only",
+  "source_checkpoint": "/home/user/gd_project/gd_rbq10_deploy_vrl/archive/aux_worktrees/update154_depthir/sources/c2769/4146_top2.pt",
+  "train_root": "/home/user/gd_project/gd_lab_vrl",
+  "camera_profile": "vendor_new",
+  "camera_contract": {
+    "profile": "vendor_new",
+    "positions": [
+      [
+        0.364,
+        0,
+        -0.024919
+      ],
+      [
+        0.26097,
+        0,
+        -0.04582
+      ],
+      [
+        -0.19515,
+        0.0065,
+        -0.0465
+      ],
+      [
+        -0.352082,
+        -1.1e-05,
+        -0.018938
+      ]
+    ],
+    "quaternions_opengl": [
+      [
+        0,
+        -0.1736482,
+        0,
+        0.9848078
+      ],
+      [
+        0,
+        0.1218693,
+        0,
+        0.9925462
+      ],
+      [
+        0,
+        0,
+        0,
+        1
+      ],
+      [
+        0.9848078,
+        0,
+        0.1736482,
+        0
+      ]
+    ],
+    "sensor_size_m": [
+      0.003896,
+      0.00214
+    ],
+    "focal_m": 0.00193,
+    "width": 80,
+    "height": 45,
+    "source_resolution": [
+      640,
+      360
+    ],
+    "depth_clip": [
+      0.15,
+      5.0
+    ],
+    "period_steps": 8,
+    "policy_dt": 0.01,
+    "render_height": 48,
+    "schema_version": 1,
+    "terrain_observation_version": 2,
+    "camera_names": [
+      "front_depth_camera0",
+      "front_depth_camera1",
+      "hind_depth_camera2",
+      "hind_depth_camera3"
+    ],
+    "channels": [
+      "depth",
+      "ir_proxy"
+    ],
+    "transform": "camera_to_trunk",
+    "camera_convention": "opengl: looks along -z, +y up",
+    "source": "RBQ SDK rbq.xml BT0-3 (v1.19.47, v1.20.0, main, nightly 41f6fac6 2026-09-09, nightly 5974087c 2026-10-04); main commit 68bc33b77719d357b4323fb88549efd905caf721, rbq.xml git blob 68ad7e0ac2d5bf181d3c6b3663310ff582894f8c",
+    "depth_semantics": "optical_axis_metres",
+    "quaternion_order": "wxyz",
+    "fov_degrees": [
+      90.531880673026,
+      58.00833537295417
+    ],
+    "fx": 39.630390143737166,
+    "fy": 40.58411214953271,
+    "cx": 40.0,
+    "cy": 22.5,
+    "frame_shape": [
+      1,
+      4,
+      2,
+      45,
+      80
+    ]
+  },
+  "camera_contract_note": "vendor_new contract of the warm-start BIVT-Ray family; the oracle reads no cameras",
+  "update154_source": {
+    "host": "onvlm2",
+    "checkpoint": "/data/users/bsseo/gd_lab_vrl_worktrees/aug149/logs/gast/arm4/2026-10-17_12-22-55_aug149_C2769_train/best_top5/4146_top2.pt"
+  },
+  "update154_parity_tolerances": {
+    "actor_atol": 1e-05,
+    "actor_rtol": 0.0001,
+    "encoder_max_abs_lt": 0.001
+  },
+  "params_sha256": {
+    "params/agent.yaml": "e98e6114cf292b7e94acdb354e40265bb8a838aeb9630756bc4db28d6eed8067",
+    "params/env.yaml": "92f48b2e7eb8ee12a2514ce51de42d7e3a6752d4294d8f15be93c2aed7cf9592",
+    "params/gast_warm_start.yaml": "3ce48761853a2e8cb443c0b9f5c9fab7974d534f3d1a9abb45383e3bad60dea3"
+  },
+  "update154_deploy_input": "ARM=C SENSOR=depth_ir: external GSC2 UDP sidecar scan, frames[1,8,561]=height*5 + valid + IR; mapper augmentation is training-only."
+}

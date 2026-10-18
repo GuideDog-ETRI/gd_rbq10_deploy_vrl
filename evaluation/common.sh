@@ -4,7 +4,7 @@ REPO="$(cd "$EVAL_DIR/.." && pwd)"
 RUNNER="$EVAL_DIR/sim_trial_eval.py"
 mkdir -p "$REPO/logs"
 PY_ISAAC="apptainer exec /home/user/workspace/gd_lab_isaaclab.sif /home/user/workspace/venv_apptainer/bin/python"
-FFMPEG="apptainer exec /home/user/workspace/gd_lab_isaaclab.sif ffmpeg"
+FFMPEG="apptainer exec ${GD_LAB_SIF:-/home/user/workspace/gd_lab_isaaclab.sif} ffmpeg"
 XTKEY="$REPO/build/xtkey"
 [ -x "$XTKEY" ] || gcc -O2 -o "$XTKEY" "$EVAL_DIR/xtkey.c" -lX11 /usr/lib/x86_64-linux-gnu/libXtst.so.6
 export PATH="$EVAL_DIR/bin:$PATH"   # gnome-terminal shim: launch tabs in the background
@@ -43,8 +43,13 @@ vision_window() {  # "<display> <xid>" of the BT0..3 Depth / IR viewer (tools/vi
 }
 
 # record <out_dir> : follow camera on, start video + 150 Hz state probe (REC/PROBE pids)
-record_start() {
+record_start() {   # VIDEO=0: state probe only, no screen recording (long repeat batches)
   local out=$1 secs=$2 w; w=$(mujoco_window)
+  if [ "${VIDEO:-1}" = 0 ]; then
+    REC=; REC_V=
+    "$REPO/build/tools/sim-state-probe" "$secs" > "$out/state.jsonl" 2> "$out/state.err" &
+    PROBE=$!; sleep 1; return 0
+  fi
   "$XTKEY" :2 "$w" bracketright; sleep 1
   local v vd; read -r vd v <<<"$(vision_window)"
   gst-launch-1.0 -e ximagesrc display-name=:2 xid=$((w)) use-damage=false ! video/x-raw,framerate=15/1 ! videoconvert ! videoscale ! video/x-raw,width=1258,height=480 ! vp8enc deadline=1 target-bitrate=3000000 ! webmmux ! filesink location="$out/walk.webm" > "$out/record.log" 2>&1 &
@@ -62,6 +67,7 @@ record_start() {
 
 record_stop() {
   local out=$1
+  if [ -z "${REC:-}" ]; then sleep 1; kill $PROBE 2>/dev/null || true; return 0; fi
   sleep 1; kill -INT $REC ${REC_V:-}; wait $REC ${REC_V:-} || true; kill $PROBE 2>/dev/null || true
   if [ -s "$out/walk_vision.webm" ]; then
     $FFMPEG -y -loglevel error -i "$out/walk.webm" -i "$out/walk_vision.webm" -filter_complex "[0:v][1:v]hstack=inputs=2:shortest=1" \
