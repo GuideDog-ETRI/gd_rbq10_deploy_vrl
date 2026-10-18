@@ -6,12 +6,21 @@
 # whatever the joystick says (the walk command itself stays yours): up pull 150 N @15.3, up push 150 N @18.0,
 # down pull 150 N @23.3, down push 150 N @26.0, 2 s each (evaluation/stair_push_trial.py, force4 directions).
 # Override: UP_PULL_N / UP_PUSH_N / DOWN_PULL_N / DOWN_PUSH_N / FORCE_SEC, or FORCE=0 for none.
+# POSE_ERR=P2 (default), P0=50 Hz ZOH only, off=legacy GT.
+# POSE_ERR_{RW_XY,RW_YAW_DEG,SLIP,WHITE_XY,WHITE_YAW_DEG,DELAY_MS} override levels.
+# RBQ_GAST_POSE_MAX_AGE_MS defaults to 150; pose_err.jsonl / pilot_pose.log record evidence.
+if [[ "${BASH_SOURCE[0]}" = "$0" ]]; then
+  if [ "${1:-}" = stop ]; then exec bash "$(dirname "$0")/stop_all.sh"; fi
+  echo 'Usage: bash _lib.sh stop (all review folders), or use a model run_sim.sh'; exit 2
+fi
 set -u
 REPO=/home/user/gd_project/gd_rbq10_deploy_vrl
 HERE=${HERE:?}; LOG=$HERE/logs; mkdir -p "$LOG"
 export DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/$(id -u)/gdm/Xauthority}
 export RBQ_GAST_SCAN_UDP=${RBQ_GAST_SCAN_UDP:-47610} RBQ_GAST_SCAN_LOG=$LOG/pilot_scan.log
 export RBQ_SIM_OBS_NOISE=${RBQ_SIM_OBS_NOISE:-1} RBQ_SIM_TERRAIN_NOISE=0 RBQ_SIM_OBS_NOISE_SEED=${SEED:-42} RBQ_PAYLOAD_KG=${PAYLOAD_KG:-6}
+source "$REPO/evaluation/pose_error157.sh"
+pose157_setup "${POSE_ERR:-P2}" "$LOG/pose_err.jsonl" || exit 2
 SIF=/home/user/workspace/gd_lab_isaaclab.sif; PY=/home/user/workspace/venv_apptainer/bin/python
 
 
@@ -23,7 +32,7 @@ course_dir() {   # same names as scripts/common/launch.sh
 sim_up() { docker exec rbq-sim-vrl sh -c 'pgrep -f "^./Mujoco(Gast|Vrl)Sync"' >/dev/null 2>&1; }
 
 cmd_start() {   # run_sim.sh [course]  (default force4)
-  if pgrep -x CAMEL-Pilot >/dev/null; then echo "[$MODEL] another simulator is running -- run its stop.sh first" >&2; exit 1; fi
+  python3 "$REPO/evaluation/sidecar_guard157.py" check --port "$RBQ_GAST_SCAN_UDP" || return 1
   echo "[$MODEL] launching MuJoCo + Pilot (force4 course) ..."
   bash "$REPO/$LAUNCHER" "${1:-force4}" > "$LOG/launch.log" 2>&1
   for i in $(seq 1 90); do sim_up && break; sleep 2; done
@@ -33,10 +42,18 @@ cmd_start() {   # run_sim.sh [course]  (default force4)
   echo "[$MODEL] starting the depth_ir sensor sidecar (seed ${SEED:-42}) ..."
   setsid bash -c "while :; do '$REPO/build/tools/sim-state-probe' 3600 10; done | apptainer exec '$SIF' env CUDA_VISIBLE_DEVICES='' OMP_NUM_THREADS=4 \
     '$PY' '$REPO/simulation/mujoco/sensor_sidecar/sidecar.py' --mode depth_ir --seed ${SEED:-42} --xml '$XML' \
-    --port $RBQ_GAST_SCAN_UDP --log '$LOG/sidecar.jsonl'" > "$LOG/sidecar.out" 2>&1 &
+    $POSE_ARGS --port $RBQ_GAST_SCAN_UDP --log '$LOG/sidecar.jsonl'" > "$LOG/sidecar.out" 2>&1 &
   echo $! > "$LOG/sidecar.pid"
   for i in $(seq 1 60); do [ -s "$LOG/sidecar.jsonl" ] && break; sleep 1; done   # first map samples written
   [ -s "$LOG/sidecar.jsonl" ] || { echo "[$MODEL] sidecar produced no map in 60 s; see $LOG/sidecar.out" >&2; exit 1; }
+  if [ "$POSE_ERR" != off ]; then
+    local ready=0
+    for i in $(seq 1 60); do
+      if [ -s "$RBQ_GAST_POSE_LOG" ] && awk 'NR>1 && $5==1 {ok=1} END {exit !ok}' "$RBQ_GAST_POSE_LOG"; then ready=1; break; fi
+      sleep 1
+    done
+    [ "$ready" = 1 ] || { echo 'ODM1 not received by Pilot; do not walk' >&2; return 1; }
+  fi
   if [ "${FORCE:-1}" = 1 ]; then
     local sec=${FORCE_SEC:-2.0}
     local plan="[[\"st20_up_pull\",15.3,${UP_PULL_N:-150},30,$sec,-1],[\"st20_up_push\",18.0,${UP_PUSH_N:-150},10,$sec,1],"
@@ -53,12 +70,9 @@ cmd_start() {   # run_sim.sh [course]  (default force4)
 run_sim() { case "${1:-}" in stop) cmd_stop ;; --check) bash "$REPO/$LAUNCHER" --check ;; *) cmd_start "$@" ;; esac; }
 
 cmd_stop() {
-  if [ -f "$LOG/force.pid" ]; then f=$(cat "$LOG/force.pid"); kill -TERM -- -"$f" 2>/dev/null; sleep 1; kill -KILL -- -"$f" 2>/dev/null; rm -f "$LOG/force.pid"; fi
-  if [ -f "$LOG/sidecar.pid" ]; then s=$(cat "$LOG/sidecar.pid")
-    pkill -TERM -s "$s" -x sim-state-probe 2>/dev/null
-    for i in $(seq 1 30); do kill -0 "$s" 2>/dev/null || break; sleep 1; done
-    kill -TERM -- -"$s" 2>/dev/null; sleep 1; kill -KILL -- -"$s" 2>/dev/null; rm -f "$LOG/sidecar.pid"
-  fi
+  # Exact --log/--state-file ownership works even when pid files are missing/stale.
+  python3 "$REPO/evaluation/sidecar_guard157.py" stop-folder --log-dir "$LOG" || return 1
+  rm -f "$LOG/sidecar.pid" "$LOG/force.pid"
   bash "$REPO/$LAUNCHER" stop > "$LOG/stop.log" 2>&1
   echo "[$MODEL] stopped."
 }

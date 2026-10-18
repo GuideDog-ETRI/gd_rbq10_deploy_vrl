@@ -21,9 +21,12 @@ export DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/$(id -u)/gdm/Xa
 export FINISH_X=12.0 HOLD_S=2 RBQ_SIM_OBS_NOISE=1 RBQ_SIM_OBS_NOISE_SEED=$SEED RBQ_PAYLOAD_KG=$PAYLOAD_KG
 case $ARM in A) export RBQ_SIM_TERRAIN_NOISE=1 ;; B|C|D|E) export RBQ_SIM_TERRAIN_NOISE=0 ;; *) echo "ARM A|B|C|D|E" >&2; exit 2 ;; esac
 SENSOR=${SENSOR:-lidar}
+python3 "$here/sidecar_guard157.py" check --port "${RBQ_GAST_SCAN_UDP:-47610}" || exit 2
 tag="${MODEL}_gapprefix5-30cm_vx${VX}_payload${PAYLOAD_KG}kg_noForce_arm${ARM}$([ "$SENSOR" = lidar ] || echo "_$SENSOR")_seed${SEED}"
 run="$OUT_DIR/$tag"; mkdir -p "$OUT_DIR/videos"
 [ -e "$run" ] && run="${run}_$(date +%H%M%S)"
+source "$here/pose_error157.sh"
+pose157_setup "${POSE_ERR:-off}" "$run/pose_err.jsonl" || exit 2
 SIDE=
 if [ "$ARM" = C ] || [ "$ARM" = D ] || [ "$ARM" = E ]; then
   MAP=$(case $ARM in D) echo gt ;; E) echo s_landing ;; *) echo sensor ;; esac)
@@ -34,7 +37,7 @@ if [ "$ARM" = C ] || [ "$ARM" = D ] || [ "$ARM" = E ]; then
   setsid bash -c "'$REPO/build/tools/sim-state-probe' 3600 10 | apptainer exec '$SIF' env CUDA_VISIBLE_DEVICES='' OMP_NUM_THREADS=4 \
     '$PY' '$REPO/simulation/mujoco/sensor_sidecar/sidecar.py' --mode $SENSOR --seed $SEED --xml '$REPO/simulation/terrains/gap_stairs_force4/environment.xml' \
     --port $RBQ_GAST_SCAN_UDP --log '$run/sidecar.jsonl' --trace '$run/sidecar_trace.jsonl' \
-    --map $MAP --payload '$run/sidecar_payload.bin' $RAWARGS" > "$run/sidecar.out" 2>&1 &
+    --map $MAP $POSE_ARGS --payload '$run/sidecar_payload.bin' $RAWARGS" > "$run/sidecar.out" 2>&1 &
   SIDE=$!; sleep 3
 fi
 printf '{"arm":"%s","sensor":"%s","seed":%s,"model":"%s","launcher":"%s","terrain_noise":%s,"proprio_noise":1,"finish_x":12.0,"forces":[]}\n' \
@@ -49,5 +52,7 @@ if [ -n "$SIDE" ]; then  # stop the probe first: the sidecar sees EOF, joins its
 fi
 ev=$(python3 "$here/force4_classify.py" --finish-x 12.0 "$run/state.jsonl" | awk '{print $2}')
 [ -f "$run/walk.mp4" ] && cp "$run/walk.mp4" "$OUT_DIR/videos/${tag}_${ev}.mp4"
+python3 "$here/pose_error157_report.py" "$run"
 echo "[gapprefix] $ev"
 stop_sim
+[ ! -f "$REPO/logs/pilot.log" ] || cp "$REPO/logs/pilot.log" "$run/pilot_runtime.log"

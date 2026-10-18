@@ -44,7 +44,7 @@ cd deploy/mujoco_review_20261018
 bash 2_orig_3906/run_sim.sh                     # 기본: force4 코스, PAYLOAD_KG=6, 외력 150 N × 2 s
 FORCE=0 PAYLOAD_KG=5 bash 2_orig_3906/run_sim.sh   # 외력 없이 5 kg
 bash 2_orig_3906/run_sim.sh stop
-#   변수: PAYLOAD_KG, FORCE, UP_PULL_N, UP_PUSH_N, DOWN_PULL_N, DOWN_PUSH_N, FORCE_SEC, SEED, POSE_ERR(odom 오차, UPDATE157 — 검증 후 커밋 예정)
+#   변수: PAYLOAD_KG, FORCE, UP_PULL_N, UP_PUSH_N, DOWN_PULL_N, DOWN_PUSH_N, FORCE_SEC, SEED, POSE_ERR(odom 오차, 결과: [POSE_ERR_ODOM_20261018.md](docs/experiments/POSE_ERR_ODOM_20261018.md))
 ```
 
 **리뷰 실행 변수 전체(출력용 A4 2쪽)**: [deploy/mujoco_review_20261018/REVIEW_PARAMS_20261018.pdf](deploy/mujoco_review_20261018/REVIEW_PARAMS_20261018.pdf) ([HTML](deploy/mujoco_review_20261018/REVIEW_PARAMS_20261018.html)). 변수 표, odom 오차 레벨(P0–P3), 코스, 모델 폴더, 예시 명령, 기록 파일.
@@ -86,7 +86,7 @@ ARM=C SENSOR=depth_ir SEED=42 MODEL=dwb38000_3906 LAUNCHER=scripts/gast/teacher/
   OUT_DIR=records/gapprefix_x bash evaluation/gapprefix.sh
 ```
 
-결과 정리: `docs/experiments/RAYIR_MUJOCO_SENSOR_20261016.md`.
+결과 정리: `docs/experiments/RAYIR_MUJOCO_SENSOR_20261016.md`, odom(pose) 오차 민감도: [docs/experiments/POSE_ERR_ODOM_20261018.md](docs/experiments/POSE_ERR_ODOM_20261018.md).
 
 ## 학생 진단: 입력과 은닉 상태 디코딩
 
@@ -152,7 +152,7 @@ MuJoCo 렌더링에는 `nvidia-container-toolkit`이 필요하다: `sudo bash si
 | 할 일 | 내용 |
 |---|---|
 | **Pilot에 `/odom` 구독 추가** | camel_pilot의 `/odom`(nav_msgs/Odometry, odom→base_link, 50 Hz)을 `VisionStudentThread`의 GAST pose 입력으로 받는다. 지금 ODM1(`RBQ_GAST_POSE_UDP`)을 받는 자리를 바꾼다. 실기에서는 매퍼도 같은 `/odom`을 쓴다 |
-| **실기 odom 오차 측정** | 실기 `/odom`과 실제 이동을 비교해 drift, 미끄러짐, 계단의 z·pitch 오차, 지연을 잰다. 그 값을 `POSE_ERR_*` 변수로 MuJoCo와 E1에 넣어 민감도를 확인한다 |
+| **실기 odom 오차 측정** | 실기 `/odom`과 실제 이동을 비교해 drift, 미끄러짐, 계단의 z·pitch 오차, 지연을 잰다. 그 값을 `POSE_ERR_*` 변수로 MuJoCo와 E1에 넣어 민감도를 확인한다. 가정 레벨(P0–P3) 결과는 [POSE_ERR_ODOM_20261018.md](docs/experiments/POSE_ERR_ODOM_20261018.md) |
 | 실제 D4xx 스트림 → 매퍼 | sidecar 대신 실제 depth+IR을 camfilter136 → v25or로 연결한다. GSC2 형식은 그대로 쓴다 |
 | `--sim` 제한 해제 조건 | pose, 접지, 센서 시계, hold 동작을 확인한 뒤 `loopbackSimulationOnly()` 검사를 해제한다 |
 | history 초기값 통일 | 계약(`simdocker_contract.json`)은 `zeros`, 실행기는 `RBQ_VRL_HISTORY_INIT=repeat_first`를 쓴다. 하나로 맞춘다 |

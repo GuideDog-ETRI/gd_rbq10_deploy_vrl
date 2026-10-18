@@ -222,6 +222,10 @@ class Sidecar:
         self.edits = 0
         self.payload = open(a.payload, "wb") if getattr(a, "payload", None) else None
         self.seq = 0
+        self.pose_stream = None
+        if getattr(a, 'pose_err', 'off') != 'off':
+            from pose_error157 import Stream
+            self.pose_stream = Stream(a)
 
     def landing_fix(self, packed, pos, yaw):
         """S-landing diagnostic: GT height on false-gap cells of real ground just beyond a pit's far edge."""
@@ -473,7 +477,13 @@ class Sidecar:
             t0 = time.perf_counter()
             with self.lock:
                 self.maps.provenance_context = dict(capture_id=item[3])
-                self.maps.integrate([0], item[2], item[1], now)
+                packet = item[2]
+                if self.pose_stream:
+                    packet = self.pose_stream.transform(packet, item[1])
+                    if packet is None:
+                        self.stats['pose_missing_capture'] = self.stats.get('pose_missing_capture', 0) + 1
+                        continue
+                self.maps.integrate([0], packet, item[1], now)
                 if self.raw: self.raw.write("integrate", dict(id=item[3], stamp=item[1], now=now))
             self.last_delivered = item[1]; self.last_cid = item[3]; self.stats["delivered"] += 1
             self.trace(ev="integrate", id=item[3], pose_mono=item[1], eligible=item[0], at=time.monotonic())
@@ -487,6 +497,14 @@ class Sidecar:
         x, y, z, w = row["imu_xyzw"]; quat = np.array([w, x, y, z], float)
         Rb = rotation(quat[None])[0]; q = np.array(row.get("q") or [0.] * 12, float)
         yaw = math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
+        sample_pos, sample_yaw = pos, yaw
+        if self.pose_stream:
+            self.pose_stream.update(now, pos, yaw, float(np.linalg.norm(row.get('vel', [0,0])[:2])))
+            odom = self.pose_stream.at(now)
+            if odom is None:
+                return  # no GT fallback while odometry starts
+            sample_pos = pos.copy(); sample_pos[:2] = odom['odom'][:2]
+            sample_yaw = odom['odom'][3]
         self.stats["lines"] += 1
         src = dict(src_wall=row.get("wall"), src_count=row.get("count"), recv_wall=time.time())
         with self.state_cv:
@@ -501,10 +519,10 @@ class Sidecar:
         t0 = time.perf_counter()
         with self.lock:
             self.maps.provenance_context = dict(sample_seq=self.seq + 1)
-            packed = self.maps.sample(np.array([[pos[0], pos[1], yaw]]), np.array([pos[2]]), now)[0].astype(np.float32)
+            packed = self.maps.sample(np.array([[sample_pos[0], sample_pos[1], sample_yaw]]), np.array([pos[2]]), now)[0].astype(np.float32)
             if self.raw:
                 self.raw.write("sample", dict(seq=self.seq + 1, stamp=now, src_wall=row.get("wall"), src_count=row.get("count")),
-                               dict(pose=np.array([pos[0], pos[1], yaw]), scanner=np.array([pos[2]]), packet=packed))
+                               dict(pose=np.array([sample_pos[0], sample_pos[1], sample_yaw]), scanner=np.array([pos[2]]), packet=packed))
         edits = 0
         if self.gt:  # arm D: same schedule and cost, ground-truth height/valid at the same sample pose
             packed[:2 * CELLS] = self.gt_grid(pos, yaw)
@@ -514,7 +532,7 @@ class Sidecar:
             packed = np.r_[packed, self.cell_ir(pos, Rb, q, yaw, packed[CELLS:2 * CELLS] > 0)]
         self.stats["sample_ms"].append(1000 * (time.perf_counter() - t0))
         self.seq += 1
-        self.sock.sendto(b"GSC2" + struct.pack("<IdI4f", len(packed), now * 1000., self.seq, pos[0], pos[1], pos[2], yaw)
+        self.sock.sendto(b"GSC2" + struct.pack("<IdI4f", len(packed), now * 1000., self.seq, sample_pos[0], sample_pos[1], pos[2], sample_yaw)
                          + packed.tobytes(), self.addr)
         if self.raw: self.raw.write("send", dict(seq=self.seq, stamp_ms=now * 1000.), dict(packet=packed))
         if self.payload:
@@ -737,6 +755,8 @@ def main():
     ap.add_argument("--raw-max-mb", type=int, default=1024)
     ap.add_argument("--provenance-max-mb", type=int, default=512)
     ap.add_argument("--payload", default=None, help="binary record of every sent packet")
+    from pose_error157 import add_arguments
+    add_arguments(ap)
     a = ap.parse_args()
     if not a.xml:
         raise SystemExit("--xml or RBQ_CVTT_TERRAIN_XML required")
@@ -760,6 +780,7 @@ def main():
         if car.recorder: car.recorder.close()
         if car.payload: car.payload.flush(); car.payload.close()
         if car.trace_f: car.trace_f.close()
+        if car.pose_stream: car.pose_stream.close()
         car.sock.close()
         if car.log: car.log.close()
     if car.worker_error is not None:
