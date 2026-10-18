@@ -4,12 +4,13 @@
 # captured (a re-run is a new trial: the same seed does not reproduce the same trajectory).
 #   MODEL=dwb38000_3906 LAUNCHER=scripts/gast/teacher/gast_rayir_3906/run_sim_ir.sh OUT_DIR=records/... \
 #   N=100 SEED=42 evaluation/force4_depthir_repeat.sh
-# Forces (force4.sh): up pull 200 N @15.3, up push 200 N @18.0, down pull 200 N @23.3, down push DOWN_PUSH_N (default 100) @26.0, 2 s.
+# Forces (force4.sh, override UP_PULL_N / UP_PUSH_N / DOWN_PULL_N / DOWN_PUSH_N): up pull 200 N @15.3, up push 200 N @18.0,
+# down pull 200 N @23.3, down push 100 N @26.0, 2 s each.
 # VIDEO_TRIES (default 12): max video re-runs per wanted outcome.
 set -u
 here="$(cd "$(dirname "$0")" && pwd)"; REPO="$(cd "$here/.." && pwd)"
 : "${MODEL:?}" "${LAUNCHER:?}" "${OUT_DIR:?}"
-N=${N:-100}; export EARLY_STOP=${EARLY_STOP:-1} RBQ_SIM_OBS_NOISE_SEED=${SEED:-42} DOWN_PUSH_N=${DOWN_PUSH_N:-100}
+N=${N:-100}; export EARLY_STOP=${EARLY_STOP:-1} RBQ_SIM_OBS_NOISE_SEED=${SEED:-42} UP_PULL_N=${UP_PULL_N:-200} UP_PUSH_N=${UP_PUSH_N:-200} DOWN_PULL_N=${DOWN_PULL_N:-200} DOWN_PUSH_N=${DOWN_PUSH_N:-100}
 mkdir -p "$OUT_DIR/runs" "$OUT_DIR/videos"
 classify() { python3 "$here/force4_classify.py" --finish-x 40.9 "$@"; }
 one() {  # one <runs dir> <video 0|1>: one trial, prints the run dir (empty if a Pilot was left over)
@@ -49,7 +50,7 @@ for want in PASS FAIL; do
     read -r ev zone _ <<<"$(classify "$d/state.jsonl" | awk '{print $2, $3}')"
     echo "[video] $want try $t: $ev $zone"
     if { [ "$want" = PASS ] && [ "$ev" = FINISH ]; } || { [ "$want" = FAIL ] && [ "$ev" != FINISH ] && [ "$zone" = "$top" ]; }; then
-      [ -f "$d/walk.mp4" ] && cp "$d/walk.mp4" "$OUT_DIR/videos/${MODEL}_force4_depthir_seed${SEED:-42}_down${DOWN_PUSH_N}N_${want}$([ "$want" = FAIL ] && echo "_$top").mp4"
+      [ -f "$d/walk.mp4" ] && cp "$d/walk.mp4" "$OUT_DIR/videos/${MODEL}_force4_depthir_seed${SEED:-42}_F${UP_PULL_N}-${UP_PUSH_N}-${DOWN_PULL_N}-${DOWN_PUSH_N}N_${want}$([ "$want" = FAIL ] && echo "_$top").mp4"
       break
     fi
   done
