@@ -99,3 +99,10 @@ simulation/mujoco/tools/place_win
 /scripts/gavd/bivt_ray21068_student19008/
 /scripts/rvld/bivt_ray21068_student19008/
 archive/
+
+# models: only blind/3906/A2769_top1 bundles are tracked (force-added); everything else stays local
+*.pt
+*.pth
+*.onnx
+*.mp4
+*.webm
