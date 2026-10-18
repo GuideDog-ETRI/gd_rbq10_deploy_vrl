@@ -5,6 +5,23 @@ RBQ10 비전 보행 정책을 MuJoCo(그리고 이후 실기)에서 돌리는 �
 - 관련 저장소: 블라인드(DWB) 배포는 `gd_rbq10_deploy`, 학습은 `gd_lab_vrl`.
 - 전체 설명: `gd_lab_vrl/docs/design/VISION_RL_OVERVIEW_20261018.pdf`.
 
+## 용어
+
+| 용어 | 설명 |
+|---|---|
+| GAST Ray+IR 교사 | `gd_lab_vrl`에서 학습한 지형 인식 보행 정책. 몸 주변 11×17 칸(10 cm) 지형 지도 8장(최근 4.8 s)을 받아 관절 목표를 낸다 |
+| 교사 직결 | 카메라 영상을 받는 학생 정책 없이, 센서 → 지형처리기가 만든 지도를 교사가 직접 받는 구조 |
+| 3906 / A2769_top1 | 모델 이름. 숫자는 학습 iteration이다. A2769_top1은 2769를 매퍼 오차 증강(aug149)으로 이어 학습한 모델의 Top-1이다. 계보는 `gd_lab_vrl/README.md` |
+| 묶음(bundle) | `resources/policy/gast/<이름>/`에 있는 배포 산출물. `policy_vrl.onnx`(actor), `gast_encoder.onnx`(지형 기억 encoder), `params/`(학습 설정), `deployment_manifest.json`(SHA·parity 기록) |
+| irinput / oracle | 묶음 종류. **irinput**은 센서 sidecar가 만든 지도(높이·valid·IR, 폭 561)를 받는다. 실제 로봇 경로와 같다. **oracle**은 코스의 정답 높이맵(폭 374, IR 0)을 Pilot이 직접 만들어 넣는 진단용이다 |
+| 지형처리기 / 매퍼 | 카메라·LiDAR 측정을 11×17 지도로 바꾸는 코드(`gd_lab_vrl/tools/rl_replay/`). 현행은 camfilter136(depth 튀는 점 제거) → v25or(L0S 매퍼: deepest-of-5 높이 + 구조 기반 갭 검출, 두 격자 OR) |
+| sensor sidecar | `simulation/mujoco/sensor_sidecar/sidecar.py`. MuJoCo에서 카메라 depth+IR(`--mode depth_ir`) 또는 LiDAR를 흉내 내 매퍼로 지도를 만들고, UDP로 Pilot에 보내는 별도 프로세스 |
+| GSC2 | sidecar → Pilot 지형 패킷 형식. 헤더(폭, 시각, seq, 샘플 pose) + float[561]. 포트는 `RBQ_GAST_SCAN_UDP`(기본 47610) |
+| ODM1 / POSE_ERR | UPDATE157에서 추가한 가짜 odom 패킷과 오차 레벨. GT pose에 drift·잡음·지연을 더해 매퍼와 Pilot이 같이 쓴다. `off`는 기존 GT, `P0`–`P3`는 오차 크기 |
+| Pilot | `build/pilot/CAMEL-Pilot`. 정책 추론(100 Hz)과 관절 명령을 맡는 C++ 프로그램. GAST 모델은 `--interface lo --sim`에서만 받는다 |
+| force4 | 갭 5–30 cm + 20 cm 계단 + 25 cm 계단 코스. 계단 4지점에서 손잡이를 자동으로 당기거나 미는 외력 시험 |
+| E1 | `gd_lab_vrl`의 Isaac 폐루프 평가. MuJoCo 결과와 함께 최종 선택에 쓴다 |
+
 ## Git에 있는 배포 묶음 (2026-10-18 정리)
 
 | 묶음 (`resources/policy/gast/`) | 실행기 | 내용 |
@@ -15,7 +32,7 @@ RBQ10 비전 보행 정책을 MuJoCo(그리고 이후 실기)에서 돌리는 �
 
 - 다른 묶음의 `*.pt`·`*.onnx`는 로컬 서버에만 있다. 대상은 2769, aug149 A3906/C2769, GAST v2.1, BIVT, 학생, archive이며 `.gitignore`로 제외했고 과거 커밋에는 남아 있다. 이 묶음들의 실행기는 가중치가 있는 서버에서만 동작한다.
 - 새 묶음을 git에 올리려면 `git add -f`를 쓴다. mp4·webm은 넣지 않는다.
-- GAST 경로는 **시뮬레이션 전용**이다. Pilot은 `--interface lo --sim`에서만 GAST 모델을 받는다. 실기 pose는 camel_pilot `/odom`을 쓸 예정이고, 포팅할 때 구현한다.
+- GAST 경로는 **시뮬레이션 전용**이다. Pilot은 `--interface lo --sim`에서만 GAST 모델을 받는다. 실기 포팅 때 할 일은 [아래](#실기-포팅-때-할-일-아직-구현-안-됨)에 있다.
 
 ## 실행
 
@@ -27,8 +44,12 @@ cd deploy/mujoco_review_20261018
 bash 2_orig_3906/run_sim.sh                     # 기본: force4 코스, PAYLOAD_KG=6, 외력 150 N × 2 s
 FORCE=0 PAYLOAD_KG=5 bash 2_orig_3906/run_sim.sh   # 외력 없이 5 kg
 bash 2_orig_3906/run_sim.sh stop
-#   변수: PAYLOAD_KG, FORCE, UP_PULL_N, UP_PUSH_N, DOWN_PULL_N, DOWN_PUSH_N, FORCE_SEC, SEED
+#   변수: PAYLOAD_KG, FORCE, UP_PULL_N, UP_PUSH_N, DOWN_PULL_N, DOWN_PUSH_N, FORCE_SEC, SEED, POSE_ERR(odom 오차, UPDATE157 — 검증 후 커밋 예정)
+```
 
+**리뷰 실행 변수 전체(출력용 A4 2쪽)**: [deploy/mujoco_review_20261018/REVIEW_PARAMS_20261018.pdf](deploy/mujoco_review_20261018/REVIEW_PARAMS_20261018.pdf) ([HTML](deploy/mujoco_review_20261018/REVIEW_PARAMS_20261018.html)). 변수 표, odom 오차 레벨(P0–P3), 코스, 모델 폴더, 예시 명령, 기록 파일.
+
+```bash
 # 개별 실행기
 bash scripts/gast/teacher/gast_rayir_3906/run_sim_ir.sh force4    # IR 입력 묶음 (sidecar는 evaluation/force4_sensor.sh 참고)
 bash scripts/gast/teacher/gast_rayir_3906/run_sim.sh gap           # oracle 묶음
@@ -124,7 +145,19 @@ sudo apt install qml6-module-qtquick qml6-module-qtquick-controls \
 벤더 스택은 `RBQ_DIR`(기본 `~/gd_project/RBQ_vendor_new/RBQ-nightly`)이고, 동기 카메라 시뮬레이터는 SDK마다 처음 한 번 자동으로 빌드된다.
 MuJoCo 렌더링에는 `nvidia-container-toolkit`이 필요하다: `sudo bash simulation/mujoco/setup_nvidia_runtime.sh`.
 
-## 실기
+## 실기 포팅 때 할 일 (아직 구현 안 됨)
+
+지금 GAST 경로는 **시뮬레이션 전용**이다. MuJoCo는 정답 pose를 쓰고, 노이즈 실험 때만 가짜 odom(ODM1)을 쓴다.
+
+| 할 일 | 내용 |
+|---|---|
+| **Pilot에 `/odom` 구독 추가** | camel_pilot의 `/odom`(nav_msgs/Odometry, odom→base_link, 50 Hz)을 `VisionStudentThread`의 GAST pose 입력으로 받는다. 지금 ODM1(`RBQ_GAST_POSE_UDP`)을 받는 자리를 바꾼다. 실기에서는 매퍼도 같은 `/odom`을 쓴다 |
+| **실기 odom 오차 측정** | 실기 `/odom`과 실제 이동을 비교해 drift, 미끄러짐, 계단의 z·pitch 오차, 지연을 잰다. 그 값을 `POSE_ERR_*` 변수로 MuJoCo와 E1에 넣어 민감도를 확인한다 |
+| 실제 D4xx 스트림 → 매퍼 | sidecar 대신 실제 depth+IR을 camfilter136 → v25or로 연결한다. GSC2 형식은 그대로 쓴다 |
+| `--sim` 제한 해제 조건 | pose, 접지, 센서 시계, hold 동작을 확인한 뒤 `loopbackSimulationOnly()` 검사를 해제한다 |
+| history 초기값 통일 | 계약(`simdocker_contract.json`)은 `zeros`, 실행기는 `RBQ_VRL_HISTORY_INIT=repeat_first`를 쓴다. 하나로 맞춘다 |
+
+## 실기 (블라인드·기존 묶음)
 
 ```bash
 bash scripts/common/deploy.sh            # 빌드 → 검증 → vision@192.168.0.12 로 배포
