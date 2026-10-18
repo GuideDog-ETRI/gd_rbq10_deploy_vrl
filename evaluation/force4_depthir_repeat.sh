@@ -9,7 +9,7 @@
 set -u
 here="$(cd "$(dirname "$0")" && pwd)"; REPO="$(cd "$here/.." && pwd)"
 : "${MODEL:?}" "${LAUNCHER:?}" "${OUT_DIR:?}"
-N=${N:-100}; export RBQ_SIM_OBS_NOISE_SEED=${SEED:-42} DOWN_PUSH_N=${DOWN_PUSH_N:-100}
+N=${N:-100}; export EARLY_STOP=${EARLY_STOP:-1} RBQ_SIM_OBS_NOISE_SEED=${SEED:-42} DOWN_PUSH_N=${DOWN_PUSH_N:-100}
 mkdir -p "$OUT_DIR/runs" "$OUT_DIR/videos"
 classify() { python3 "$here/force4_classify.py" --finish-x 40.9 "$@"; }
 one() {  # one <runs dir> <video 0|1>: one trial, prints the run dir (empty if a Pilot was left over)
