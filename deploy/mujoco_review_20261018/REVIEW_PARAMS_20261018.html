@@ -1,0 +1,112 @@
+<meta charset="utf-8">
+<title>MuJoCo 리뷰 실행 변수</title>
+<style>
+  @page { size: A4; margin: 15mm 13mm; }
+  :root { --ink:#16181d; --mute:#5b6270; --line:#d7dbe2; --bg:#f6f7f9;
+          --accent:#1f4e79; --warn:#8a4b00; --new:#0b6b3a; }
+  * { box-sizing: border-box; }
+  body { font-family:"Noto Sans CJK KR","Noto Sans KR",-apple-system,"Segoe UI",sans-serif;
+         font-size:9.4pt; line-height:1.6; color:var(--ink); margin:0; }
+  code,.mono { font-family:"D2Coding","Noto Sans Mono CJK KR",ui-monospace,Menlo,monospace; font-size:8.6pt; }
+  h1 { font-size:20pt; margin:0 0 2mm; letter-spacing:-.4px; }
+  h2 { font-size:13.5pt; margin:8mm 0 3mm; padding-bottom:1.5mm;
+       border-bottom:2px solid var(--accent); color:var(--accent); page-break-after:avoid; }
+  h3 { font-size:10.8pt; margin:5.5mm 0 2mm; color:#243447; page-break-after:avoid; }
+  h4 { font-size:9.6pt; margin:3.5mm 0 1.4mm; color:#3a4757; page-break-after:avoid; }
+  p { margin:0 0 2.2mm; }
+  ul,ol { margin:0 0 2.4mm; padding-left:5mm; }
+  li { margin-bottom:.9mm; }
+  table { width:100%; border-collapse:collapse; margin:2mm 0 3.6mm; font-size:8.7pt; page-break-inside:avoid; }
+  th { background:var(--bg); text-align:left; font-weight:600; color:#2c3444; }
+  th,td { border:1px solid var(--line); padding:1.4mm 1.9mm; vertical-align:top; }
+  td.num,th.num { text-align:right; font-variant-numeric:tabular-nums; }
+  .lead { color:var(--mute); margin-bottom:4mm; }
+  .box { border:1px solid var(--line); border-left:3px solid var(--accent); background:var(--bg);
+         padding:2.2mm 2.8mm; margin:2.6mm 0; page-break-inside:avoid; }
+  .box.warn { border-left-color:var(--warn); }
+  .box.new { border-left-color:var(--new); }
+  .box .t { font-weight:600; display:block; margin-bottom:.9mm; }
+  .tag { display:inline-block; font-size:7.4pt; font-weight:600; padding:.2mm 1.3mm;
+         border-radius:2px; vertical-align:1px; margin-left:1mm; }
+  .tag.new { background:#e3f3ea; color:var(--new); border:1px solid #b9dfca; }
+  .tag.chg { background:#fdf1e0; color:var(--warn); border:1px solid #f0d5ac; }
+  pre { background:#f2f4f7; border:1px solid var(--line); padding:2mm 2.4mm; margin:1.8mm 0 2.8mm;
+        white-space:pre; overflow-x:hidden; font-size:8.1pt; line-height:1.42; page-break-inside:avoid; }
+  .eq { background:#fbfcfd; border:1px solid var(--line); padding:2mm 3mm; margin:2mm 0 3mm;
+        font-family:"D2Coding",ui-monospace,monospace; font-size:8.7pt; page-break-inside:avoid; }
+  .toc { columns:2; column-gap:8mm; font-size:8.9pt; }
+  .small { font-size:8.4pt; color:var(--mute); }
+  .pb { page-break-before:always; }
+  hr { border:0; border-top:1px solid var(--line); margin:4mm 0; }
+</style>
+<h1>MuJoCo 조이스틱 리뷰 실행 변수 <span class="small">deploy/mujoco_review_20261018 · 2026-10-18</span></h1>
+<p class="lead">센서 경로 = 로봇 경로: 하부 depth 카메라 4대 → camfilter136 → v25or 지도 + IR → GAST 교사. 계단 4지점 자동 외력, odom(pose) 오차 주입 지원.
+조이스틱(CAMEL-Console)으로 직접 주행하고, 외력은 지정 위치에서 자동으로 걸린다.</p>
+
+<h2>사용법</h2>
+<pre>
+cd ~/gd_project/gd_rbq10_deploy_vrl/deploy/mujoco_review_20261018
+
+bash 2_orig_3906/run_sim.sh [코스]      # 시작 (기본 코스 force4)
+bash 2_orig_3906/run_sim.sh --check     # 정적 검사만
+bash 2_orig_3906/run_sim.sh stop        # 이 모델 정리
+bash _lib.sh stop                       # 네 모델 폴더 모두 정리 (stop_all.sh)
+</pre>
+<div class="box warn"><span class="t">주의</span>시뮬레이터는 한 번에 하나만 돈다. 모델을 바꾸기 전에 반드시 <code>stop</code>(또는 <code>bash _lib.sh stop</code>)을 실행한다. 이미 sidecar나 Pilot이 떠 있으면 시작을 거부한다.</div>
+
+<h2>변수</h2>
+<table>
+<tr><th>변수</th><th>기본값</th><th>의미</th></tr>
+<tr><td><code>PAYLOAD_KG</code></td><td>6</td><td>탑재 질량 (실사양 5 kg)</td></tr>
+<tr><td><code>SEED</code></td><td>42</td><td>고유감각 노이즈·센서 sidecar 난수 seed. odom 오차 궤적도 이 seed로 정해짐</td></tr>
+<tr><td><code>RBQ_SIM_OBS_NOISE</code></td><td>1</td><td>고유감각 관측 노이즈(학습 계약값). 0 = 끔</td></tr>
+<tr><td><code>FORCE</code></td><td>1</td><td>계단 4지점 자동 외력. 0 = 외력 없음</td></tr>
+<tr><td><code>UP_PULL_N</code></td><td>150</td><td>오르막 당김 (x 15.3 m, 뒤쪽 30° 아래)</td></tr>
+<tr><td><code>UP_PUSH_N</code></td><td>150</td><td>오르막 밂 (x 18.0 m, 앞쪽 10° 아래)</td></tr>
+<tr><td><code>DOWN_PULL_N</code></td><td>150</td><td>내리막 당김 (x 23.3 m)</td></tr>
+<tr><td><code>DOWN_PUSH_N</code></td><td>150</td><td>내리막 밂 (x 26.0 m)</td></tr>
+<tr><td><code>FORCE_SEC</code></td><td>2.0</td><td>외력 지속 시간 (s). 각 지점을 처음 지날 때 한 번씩</td></tr>
+<tr><td><code>POSE_ERR</code></td><td><b>P2</b></td><td>odom 오차 레벨: off(기존 GT) / P0 / P1 / P2 / P3 (아래 표)</td></tr>
+<tr><td><code>POSE_ERR_RW_XY</code></td><td>레벨값</td><td>위치 랜덤워크 drift (m/√s), 움직일 때만 누적</td></tr>
+<tr><td><code>POSE_ERR_RW_YAW_DEG</code></td><td>레벨값</td><td>yaw 랜덤워크 drift (°/√s), 움직일 때만 누적</td></tr>
+<tr><td><code>POSE_ERR_SLIP</code></td><td>레벨값</td><td>이동 거리 비례 위치 오차 계수 (무차원)</td></tr>
+<tr><td><code>POSE_ERR_WHITE_XY</code></td><td>레벨값</td><td>샘플마다 위치 잡음 (m)</td></tr>
+<tr><td><code>POSE_ERR_WHITE_YAW_DEG</code></td><td>레벨값</td><td>샘플마다 yaw 잡음 (°)</td></tr>
+<tr><td><code>POSE_ERR_DELAY_MS</code></td><td>레벨값</td><td>odom 지연 (ms)</td></tr>
+<tr><td><code>RBQ_GAST_POSE_MAX_AGE_MS</code></td><td>150</td><td>Pilot이 odom을 쓰는 최대 나이. 넘으면 지형 latent 0 (blackout과 같음)</td></tr>
+</table>
+
+<h3>POSE_ERR 레벨값</h3>
+<table>
+<tr><th>레벨</th><th class="num">RW_XY</th><th class="num">RW_YAW_DEG</th><th class="num">SLIP</th><th class="num">WHITE_XY</th><th class="num">WHITE_YAW_DEG</th><th class="num">DELAY_MS</th></tr>
+<tr><td>off</td><td colspan="6">시뮬레이터 정답(GT) pose 그대로 (기존 동작)</td></tr>
+<tr><td>P0</td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td class="num">0 (50 Hz 갱신만)</td></tr>
+<tr><td>P1</td><td class="num">0.005</td><td class="num">0.1</td><td class="num">0.01</td><td class="num">0.003</td><td class="num">0.1</td><td class="num">20</td></tr>
+<tr><td>P2</td><td class="num">0.015</td><td class="num">0.3</td><td class="num">0.03</td><td class="num">0.005</td><td class="num">0.2</td><td class="num">40</td></tr>
+<tr><td>P3</td><td class="num">0.04</td><td class="num">0.8</td><td class="num">0.06</td><td class="num">0.01</td><td class="num">0.5</td><td class="num">80</td></tr>
+</table>
+<p class="small">수치는 실기 측정 전 가정치다. 오차 pose는 매퍼(지도 쌓기)와 Pilot 지형 기억 정렬에 똑같이 쓰인다(실기 /odom 구조와 같음). 정지 중에는 drift가 누적되지 않는다(이동 0.05 m/s 또는 회전 0.05 rad/s 초과 시만). z·roll·pitch 오차는 없다.</p>
+
+<h2>코스와 모델</h2>
+<table>
+<tr><th>항목</th><th>값</th></tr>
+<tr><td>코스 (위치 인자)</td><td><code>force4</code>(기본: 갭 5–30 cm → 20 cm 계단 오르내리기 → 25 cm 계단) · <code>gap</code> · <code>gap150</code> · <code>stairs</code> · <code>stairs20</code> · <code>stairs20gap</code> · <code>gapstairs</code> · <code>gapstairs15</code> · <code>course</code></td></tr>
+<tr><td>모델 폴더</td><td><code>1_A2769_top1</code> · <code>2_orig_3906</code> · <code>3_A3906_l2000</code> · <code>4_orig_2769</code></td></tr>
+</table>
+
+<h2>예시</h2>
+<pre>
+bash 2_orig_3906/run_sim.sh                                      # odom P2, 6 kg, 외력 150 N × 2 s
+POSE_ERR=off bash 2_orig_3906/run_sim.sh                         # 기존처럼 GT pose
+POSE_ERR=P3 bash 2_orig_3906/run_sim.sh                          # 큰 odom 오차
+FORCE=0 PAYLOAD_KG=5 POSE_ERR=P1 bash 2_orig_3906/run_sim.sh     # 외력 없음, 5 kg, 작은 오차
+POSE_ERR=P2 POSE_ERR_DELAY_MS=0 bash 2_orig_3906/run_sim.sh      # P2에서 지연만 0
+POSE_ERR=P0 POSE_ERR_RW_YAW_DEG=0.5 bash 2_orig_3906/run_sim.sh  # yaw drift만 0.5°/√s
+UP_PULL_N=200 FORCE_SEC=1.0 SEED=43 bash 2_orig_3906/run_sim.sh  # 오르막 당김 200 N·1 s, seed 43
+RBQ_SIM_OBS_NOISE=0 POSE_ERR=off bash 2_orig_3906/run_sim.sh     # 노이즈 모두 끔
+bash 2_orig_3906/run_sim.sh gap                                  # 갭 코스 (0.65 m 구덩이)
+bash 2_orig_3906/run_sim.sh stop
+</pre>
+
+<h2>기록</h2>
+<p><code>&lt;모델 폴더&gt;/logs/</code>: <code>pose_err.jsonl</code>(GT·odom·오차 궤적), <code>pilot_pose.log</code>(Pilot이 실제 쓴 pose), <code>pilot_scan.log</code>(지형 패킷), <code>sidecar.jsonl</code>(지도 기록), <code>pushes.json</code>(외력 결과).</p>
