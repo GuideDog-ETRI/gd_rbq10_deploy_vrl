@@ -13,6 +13,11 @@
 #include <Eigen/Dense>
 #include <onnxruntime_cxx_api.h>
 
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
 #include <common/Log.hpp>
 
 #include "VisionStudentThread.hpp"
@@ -69,6 +74,60 @@ void onnxToMotor(const float in[12], float out[12]) {
     out[11] = in[8]; out[8] = in[9]; out[5]  = in[10]; out[2]  = in[11];
 }
 
+// GAST-Narrow v2 head-LiDAR obstacle map (simulation: simulation/mujoco/sensor_sidecar/head_lidar.py).
+// Packet (little endian): "NLM1", uint32 width (2880), double stamp_ms (CLOCK_MONOTONIC like steadyMs), uint32 seq,
+// uint8[width]. A map older than kNarrowMaxAgeMs (or none) is fed as all zeros = LiDAR off, the joystick mode the
+// policy was trained with (never the last map held).
+struct NarrowLidarInput {
+    static constexpr int kWidth = 2 * 30 * 48;
+    static constexpr int64_t kNarrowMaxAgeMs = 300;
+    int sock = -1;
+    std::vector<float> map = std::vector<float>(kWidth, 0.f);
+    std::vector<float> zeros = std::vector<float>(kWidth, 0.f);
+    int64_t stampMs = -1;
+    uint32_t seq = 0;
+    int packets = 0, freshCalls = 0, offCalls = 0;
+    bool forcedOff = false;
+
+    bool open() {
+        const char* off = std::getenv("RBQ_NARROW_LIDAR_OFF");
+        forcedOff = off && std::strcmp(off, "1") == 0;
+        const char* port = std::getenv("RBQ_NARROW_LIDAR_UDP");
+        const int p = (port && *port) ? std::atoi(port) : 47612;
+        sock = ::socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0);
+        sockaddr_in addr{}; addr.sin_family = AF_INET; addr.sin_port = htons(static_cast<uint16_t>(p));
+        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        if (sock < 0 || ::bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
+            FILE_LOG_AS(logERROR, "RLWALK") << "RBQ_NARROW_LIDAR_UDP bind failed on 127.0.0.1:" << p;
+            return false;
+        }
+        FILE_LOG_AS(logINFO, "RLWALK") << "narrow head-LiDAR map on udp 127.0.0.1:" << p
+            << (forcedOff ? " (RBQ_NARROW_LIDAR_OFF=1: always zero)" : "") << ", stale after " << kNarrowMaxAgeMs << " ms";
+        return true;
+    }
+    ~NarrowLidarInput() { if (sock >= 0) ::close(sock); }
+
+    // Drains the socket; returns the map to feed (fresh map or zeros).
+    const float* latest(int64_t nowMs, int64_t* ageMs) {
+        std::array<char, 20 + kWidth> buf{};
+        for (;;) {
+            const ssize_t n = ::recv(sock, buf.data(), buf.size(), 0);
+            if (n < 0) break;
+            if (n != static_cast<ssize_t>(buf.size()) || std::memcmp(buf.data(), "NLM1", 4) != 0) continue;
+            uint32_t w = 0; double stamp = 0;
+            std::memcpy(&w, buf.data() + 4, 4); std::memcpy(&stamp, buf.data() + 8, 8);
+            if (w != kWidth) continue;
+            std::memcpy(&seq, buf.data() + 16, 4);
+            for (int i = 0; i < kWidth; ++i) map[i] = buf[20 + i] ? 1.f : 0.f;
+            stampMs = static_cast<int64_t>(stamp); ++packets;
+        }
+        *ageMs = stampMs < 0 ? -1 : nowMs - stampMs;
+        const bool fresh = !forcedOff && stampMs >= 0 && *ageMs <= kNarrowMaxAgeMs;
+        (fresh ? freshCalls : offCalls)++;
+        return fresh ? map.data() : zeros.data();
+    }
+};
+
 }  // namespace
 
 struct DreamVrlBackend::Impl {
@@ -105,6 +164,13 @@ struct DreamVrlBackend::Impl {
     std::unique_ptr<VisionStudentThread> student;
     std::string desc;
 
+    // GAST-Narrow v2 (5-input actor): head-LiDAR map + requested side clearance m (RBQ_NARROW_MARGIN_M, default 0.10,
+    // trained range 0.05..0.15 -> obs (m - 0.10) / 0.05).
+    bool narrow = false;
+    std::unique_ptr<NarrowLidarInput> narrowLidar;
+    float marginObs = 0.f;
+    int64_t narrowAgeMax = -1;
+
     bool load(const std::string& actorOnnxPath, float payloadKgIn) {
         const char* initialization = std::getenv("RBQ_VRL_HISTORY_INIT");
         if (initialization && std::strcmp(initialization, "zeros") != 0 &&
@@ -123,12 +189,34 @@ struct DreamVrlBackend::Impl {
         opts.SetGraphOptimizationLevel(ORT_ENABLE_EXTENDED);
         session = std::make_unique<Ort::Session>(*env, actorOnnxPath.c_str(), opts);
 
-        if (session->GetInputCount() != 3 || session->GetOutputCount() != 2) {
+        const size_t nInputs = session->GetInputCount();
+        if ((nInputs != 3 && nInputs != 5) || session->GetOutputCount() != 2) {
             FILE_LOG_AS(logERROR, "RLWALK")
                 << "vision-RL actor ONNX must be 3-input/2-output (direct_obs, cenet_obs, "
-                << "terrain_latent -> actions, z_t), got " << session->GetInputCount() << "/"
-                << session->GetOutputCount() << " (" << actorOnnxPath << ")";
+                << "terrain_latent -> actions, z_t) or 5-input GAST-Narrow (+ lidar_map, margin), got "
+                << session->GetInputCount() << "/" << session->GetOutputCount() << " (" << actorOnnxPath << ")";
             return false;
+        }
+        narrow = nInputs == 5;
+        if (narrow) {
+            const auto mapShape = session->GetInputTypeInfo(3).GetTensorTypeAndShapeInfo().GetShape();
+            const auto marginShape = session->GetInputTypeInfo(4).GetTensorTypeAndShapeInfo().GetShape();
+            if (!featureShapeMatches(mapShape, NarrowLidarInput::kWidth) || !featureShapeMatches(marginShape, 1)) {
+                FILE_LOG_AS(logERROR, "RLWALK") << "GAST-Narrow actor expects lidar_map[1,"
+                    << NarrowLidarInput::kWidth << "], margin[1,1] (" << actorOnnxPath << ")";
+                return false;
+            }
+            const char* m = std::getenv("RBQ_NARROW_MARGIN_M");
+            float margin = (m && *m) ? static_cast<float>(std::atof(m)) : 0.10f;
+            if (!(margin >= 0.05f && margin <= 0.15f)) {
+                FILE_LOG_AS(logWARNING, "RLWALK") << "RBQ_NARROW_MARGIN_M=" << margin
+                    << " outside the trained 0.05..0.15 m; clamped";
+                margin = std::clamp(margin, 0.05f, 0.15f);
+            }
+            marginObs = (margin - 0.10f) / 0.05f;
+            narrowLidar = std::make_unique<NarrowLidarInput>();
+            if (!narrowLidar->open()) return false;
+            FILE_LOG_AS(logINFO, "RLWALK") << "GAST-Narrow margin m=" << margin << " m (obs " << marginObs << ")";
         }
 
         // direct 입력의 특징 차원으로 obs 레이아웃을 감지한다 -- DreamBackend 와
@@ -186,7 +274,7 @@ struct DreamVrlBackend::Impl {
         }
 
         desc = actorOnnxPath + (hasPayloadObs ? " (DreamVrl, 3-input 46/230/" : " (DreamVrl, 3-input 45/225/") + std::to_string(kLatentDim) +
-               ", student=" + studentPath.string() + ")";
+               (narrow ? " + narrow lidar_map/margin" : "") + ", student=" + studentPath.string() + ")";
         FILE_LOG_AS(logSUCCESS, "RLWALK") << "policy loaded: " << desc;
         return true;
     }
@@ -293,16 +381,26 @@ struct DreamVrlBackend::Impl {
         std::array<int64_t, 2> directShp{1, static_cast<int64_t>(directObs.size())};
         std::array<int64_t, 2> cenetShp{1, static_cast<int64_t>(cenetObs.size())};
         std::array<int64_t, 2> latentShp{1, kLatentDim};
-        std::array<Ort::Value, 3> inputs{
-            Ort::Value::CreateTensor<float>(mem, directObs.data(), directObs.size(), directShp.data(),
-                                            directShp.size()),
-            Ort::Value::CreateTensor<float>(mem, cenetObs.data(), cenetObs.size(), cenetShp.data(),
-                                            cenetShp.size()),
-            Ort::Value::CreateTensor<float>(mem, latent, kLatentDim, latentShp.data(), latentShp.size())};
+        std::vector<Ort::Value> inputs;
+        inputs.push_back(Ort::Value::CreateTensor<float>(mem, directObs.data(), directObs.size(), directShp.data(),
+                                                         directShp.size()));
+        inputs.push_back(Ort::Value::CreateTensor<float>(mem, cenetObs.data(), cenetObs.size(), cenetShp.data(),
+                                                         cenetShp.size()));
+        inputs.push_back(Ort::Value::CreateTensor<float>(mem, latent, kLatentDim, latentShp.data(), latentShp.size()));
+        std::array<int64_t, 2> mapShp{1, NarrowLidarInput::kWidth};
+        std::array<int64_t, 2> marginShp{1, 1};
+        if (narrow) {
+            int64_t age = -1;
+            const float* map = narrowLidar->latest(steadyMs(), &age);
+            narrowAgeMax = std::max(narrowAgeMax, age);
+            inputs.push_back(Ort::Value::CreateTensor<float>(mem, const_cast<float*>(map), NarrowLidarInput::kWidth,
+                                                             mapShp.data(), mapShp.size()));
+            inputs.push_back(Ort::Value::CreateTensor<float>(mem, &marginObs, 1, marginShp.data(), marginShp.size()));
+        }
 
-        static const char* inNames[]  = {"direct_obs", "cenet_obs", "terrain_latent"};
+        static const char* inNames[]  = {"direct_obs", "cenet_obs", "terrain_latent", "lidar_map", "margin"};
         static const char* outNames[] = {"actions", "z_t"};
-        auto outs = session->Run(Ort::RunOptions{nullptr}, inNames, inputs.data(), 3, outNames, 2);
+        auto outs = session->Run(Ort::RunOptions{nullptr}, inNames, inputs.data(), inputs.size(), outNames, 2);
         const float* act = outs[0].GetTensorMutableData<float>();
 
         float targetOnnx[12];
@@ -340,6 +438,14 @@ struct DreamVrlBackend::Impl {
             FILE_LOG_AS(logINFO, "VRLDIAG")
                 << "target_step_max_rad=" << diag.maxDelta
                 << " freshness_edge_step_max_rad=" << diag.edgeDelta;
+            if (narrow) {
+                FILE_LOG_AS(logINFO, "VRLDIAG")
+                    << "narrow_lidar packets=" << narrowLidar->packets << " fresh=" << narrowLidar->freshCalls
+                    << " off=" << narrowLidar->offCalls << " seq=" << narrowLidar->seq
+                    << " age_max_ms=" << narrowAgeMax << " margin_obs=" << marginObs;
+                narrowLidar->packets = narrowLidar->freshCalls = narrowLidar->offCalls = 0;
+                narrowAgeMax = -1;
+            }
             diag = Diagnostic{};
             diag.start = now;
             diag.havePrevious = true;

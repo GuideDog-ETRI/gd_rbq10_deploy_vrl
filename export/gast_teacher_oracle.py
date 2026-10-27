@@ -89,6 +89,8 @@ CHANNELS = int(state["terrain_encoder.cnn.0.weight"].shape[1])  # 2: [height, va
 assert CHANNELS in (2, 3), CHANNELS
 IR_INPUT = bool(args.ir_input)
 assert not IR_INPUT or CHANNELS == 3, "--ir_input needs a Ray+IR (3-channel) teacher"
+# Encoder parity limit; GAST_EXPORT_ENCODER_ATOL loosens it for one export (the limit used is recorded in checks).
+ENCODER_ATOL = float(os.environ.get("GAST_EXPORT_ENCODER_ATOL", 1e-3 if IR_INPUT else 5e-4 if CHANNELS == 3 else 2e-4))
 WIDTH = 561 if IR_INPUT else 374
 temporal = TemporalTerrainEncoder(channels=CHANNELS) if CHANNELS == 3 else TemporalTerrainEncoder()
 temporal.load_state_dict({k.removeprefix("terrain_encoder."): v for k, v in state.items()
@@ -264,8 +266,9 @@ for step in range(700):
     if 200 <= step < 230:
         assert not np.any(out), "blackout latent must be exactly zero"
         n_avail0 += 1
-    assert err < (1e-3 if IR_INPUT else 5e-4 if CHANNELS == 3 else 2e-4), f"encoder parity step {step}: {err}"  # float32 ONNX vs torch; IR input ~6e-4
+    assert err < ENCODER_ATOL, f"encoder parity step {step}: {err}"  # float32 ONNX vs torch; IR input ~6e-4
 checks["encoder_trajectory_700_max"] = max_err
+checks["encoder_parity_limit"] = ENCODER_ATOL
 checks["encoder_blackout_zero_steps"] = n_avail0
 
 manifest = {"teacher_sha256": sha(teacher), "iteration": ckpt.get("iter"), "kind": "gast_teacher_oracle",

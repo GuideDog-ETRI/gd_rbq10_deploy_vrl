@@ -1,0 +1,20 @@
+{
+ "door1": 3.0,
+ "door2": 4.6,
+ "corridor": 6.8,
+ "corridor_end": 10.8,
+ "funnel": 12.8,
+ "funnel_narrowest": 14.8,
+ "funnel_end": 18.3,
+ "bend": 20.3,
+ "bend_corner_x": 22.8,
+ "dead_end_mouth_y": 5.0,
+ "dead_end_wall_y": 7.0,
+ "widths": {
+  "door": 0.8,
+  "corridor": 0.76,
+  "funnel": 0.8,
+  "bend": 0.8,
+  "dead": 0.9
+ }
+}

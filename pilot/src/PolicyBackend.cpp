@@ -447,7 +447,8 @@ std::unique_ptr<PolicyBackend> PolicyBackend::create(const std::string& path, fl
             Ort::Session probeSession(probeEnv, model.c_str(), probeOpts);
             inputCount = probeSession.GetInputCount();
         }
-        if (inputCount == 3) {
+        // 5-input = GAST-Narrow v2 (+ head-LiDAR map [1,2880], margin [1,1]); same backend, optional inputs.
+        if (inputCount == 3 || inputCount == 5) {
             auto backend = std::make_unique<DreamVrlBackend>();
             if (!backend->load(model, payloadKg)) return nullptr;
             return backend;

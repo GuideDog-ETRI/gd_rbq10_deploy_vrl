@@ -1,0 +1,32 @@
+{
+ "gap_5": 2.0,
+ "gap_10": 3.55,
+ "gap_15": 5.15,
+ "gap_20": 6.8,
+ "gap_25": 8.5,
+ "gap_30": 10.25,
+ "st20_up": 14.55,
+ "st20_down": 22.55,
+ "st20_end": 28.55,
+ "st25_up": 30.55,
+ "st25_down": 35.55,
+ "st25_end": 38.55,
+ "door1": 40.55,
+ "door2": 42.15,
+ "corridor": 44.35,
+ "corridor_end": 48.35,
+ "funnel": 50.35,
+ "funnel_narrowest": 52.35,
+ "funnel_end": 55.85,
+ "bend": 57.85,
+ "bend_corner_x": 60.35,
+ "dead_end_mouth_y": 5.0,
+ "dead_end_wall_y": 7.0,
+ "widths": {
+  "door": 0.8,
+  "corridor": 0.76,
+  "funnel": 0.8,
+  "bend": 0.8,
+  "dead": 0.9
+ }
+}

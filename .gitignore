@@ -106,3 +106,8 @@ archive/
 *.onnx
 *.mp4
 *.webm
+
+# 2026-10-27: back-gap / narrow model bundles and MuJoCo review runs stay local (models are not pushed)
+/resources/policy/gast/gast_rayir_backgap*/
+/resources/policy/gast/gast_narrow_*/
+/deploy/mujoco_review_*/*/runs/

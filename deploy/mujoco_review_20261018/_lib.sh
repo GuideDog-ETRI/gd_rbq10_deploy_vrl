@@ -18,9 +18,14 @@ REPO=/home/user/gd_project/gd_rbq10_deploy_vrl
 HERE=${HERE:?}; LOG=$HERE/logs; mkdir -p "$LOG"
 export DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/$(id -u)/gdm/Xauthority}
 export RBQ_GAST_SCAN_UDP=${RBQ_GAST_SCAN_UDP:-47610} RBQ_GAST_SCAN_LOG=$LOG/pilot_scan.log
+# GAST-Narrow v2 (NARROW=1 in the model folder): LIDAR=both|ouster|mid360|off, MARGIN=0.05..0.15 m (default 0.10).
+# Head-LiDAR map port 47612 (47610 = GAST scan, 47611 = ODM1 pose).
+export RBQ_NARROW_LIDAR_UDP=${RBQ_NARROW_LIDAR_UDP:-47612} RBQ_NARROW_MARGIN_M=${MARGIN:-0.10}
+[ "${LIDAR:-both}" = off ] && export RBQ_NARROW_LIDAR_OFF=1
 export RBQ_SIM_OBS_NOISE=${RBQ_SIM_OBS_NOISE:-1} RBQ_SIM_TERRAIN_NOISE=0 RBQ_SIM_OBS_NOISE_SEED=${SEED:-42} RBQ_PAYLOAD_KG=${PAYLOAD_KG:-6}
 source "$REPO/evaluation/pose_error157.sh"
 pose157_setup "${POSE_ERR:-P2}" "$LOG/pose_err.jsonl" || exit 2
+DEFAULT_COURSE=${DEFAULT_COURSE:-force4}
 SIF=/home/user/workspace/gd_lab_isaaclab.sif; PY=/home/user/workspace/venv_apptainer/bin/python
 
 
@@ -33,12 +38,12 @@ sim_up() { docker exec rbq-sim-vrl sh -c 'pgrep -f "^./Mujoco(Gast|Vrl)Sync"' >/
 
 cmd_start() {   # run_sim.sh [course]  (default force4)
   python3 "$REPO/evaluation/sidecar_guard157.py" check --port "$RBQ_GAST_SCAN_UDP" || return 1
-  echo "[$MODEL] launching MuJoCo + Pilot (force4 course) ..."
-  bash "$REPO/$LAUNCHER" "${1:-force4}" > "$LOG/launch.log" 2>&1
+  echo "[$MODEL] launching MuJoCo + Pilot (${1:-$DEFAULT_COURSE} course) ..."
+  bash "$REPO/$LAUNCHER" "${1:-$DEFAULT_COURSE}" > "$LOG/launch.log" 2>&1
   for i in $(seq 1 90); do sim_up && break; sleep 2; done
   sim_up || { echo "[$MODEL] simulator did not come up; see $LOG/launch.log" >&2; exit 1; }
   sleep 8
-  local XML=$REPO/simulation/terrains/$(course_dir "${1:-force4}")/environment.xml
+  local XML=$REPO/simulation/terrains/$(course_dir "${1:-$DEFAULT_COURSE}")/environment.xml
   echo "[$MODEL] starting the depth_ir sensor sidecar (seed ${SEED:-42}) ..."
   setsid bash -c "while :; do '$REPO/build/tools/sim-state-probe' 3600 10; done | apptainer exec '$SIF' env CUDA_VISIBLE_DEVICES='' OMP_NUM_THREADS=4 \
     '$PY' '$REPO/simulation/mujoco/sensor_sidecar/sidecar.py' --mode depth_ir --seed ${SEED:-42} --xml '$XML' \
@@ -46,6 +51,17 @@ cmd_start() {   # run_sim.sh [course]  (default force4)
   echo $! > "$LOG/sidecar.pid"
   for i in $(seq 1 60); do [ -s "$LOG/sidecar.jsonl" ] && break; sleep 1; done   # first map samples written
   [ -s "$LOG/sidecar.jsonl" ] || { echo "[$MODEL] sidecar produced no map in 60 s; see $LOG/sidecar.out" >&2; exit 1; }
+  if [ "${NARROW:-0}" = 1 ]; then   # GAST-Narrow v2: head-LiDAR (Ouster + Mid-360) obstacle map -> Pilot NLM1 port
+    echo "[$MODEL] starting the head-LiDAR sidecar (sensors ${LIDAR:-both}, margin m=${RBQ_NARROW_MARGIN_M}) ..."
+    setsid bash -c "while :; do '$REPO/build/tools/sim-state-probe' 3600 10; done | apptainer exec '$SIF' env CUDA_VISIBLE_DEVICES='' OMP_NUM_THREADS=2 \
+      '$PY' '$REPO/simulation/mujoco/sensor_sidecar/head_lidar.py' --xml '$XML' --sensors ${LIDAR:-both} --seed ${SEED:-42} \
+      --port $RBQ_NARROW_LIDAR_UDP --log '$LOG/head_lidar.jsonl'" > "$LOG/head_lidar.out" 2>&1 &
+    echo $! > "$LOG/head_lidar.pid"
+    if [ "${LIDAR:-both}" != off ]; then
+      for i in $(seq 1 30); do [ -s "$LOG/head_lidar.jsonl" ] && break; sleep 1; done
+      [ -s "$LOG/head_lidar.jsonl" ] || { echo "[$MODEL] head-LiDAR sidecar produced no map in 30 s; see $LOG/head_lidar.out" >&2; exit 1; }
+    fi
+  fi
   if [ "$POSE_ERR" != off ]; then
     local ready=0
     for i in $(seq 1 60); do
@@ -72,7 +88,8 @@ run_sim() { case "${1:-}" in stop) cmd_stop ;; --check) bash "$REPO/$LAUNCHER" -
 cmd_stop() {
   # Exact --log/--state-file ownership works even when pid files are missing/stale.
   python3 "$REPO/evaluation/sidecar_guard157.py" stop-folder --log-dir "$LOG" || return 1
-  rm -f "$LOG/sidecar.pid" "$LOG/force.pid"
+  if [ -f "$LOG/head_lidar.pid" ]; then kill -- -"$(cat "$LOG/head_lidar.pid")" 2>/dev/null; pkill -f "head_lidar.py --xml .* --log $LOG/head_lidar.jsonl" 2>/dev/null; fi
+  rm -f "$LOG/sidecar.pid" "$LOG/force.pid" "$LOG/head_lidar.pid"
   bash "$REPO/$LAUNCHER" stop > "$LOG/stop.log" 2>&1
   echo "[$MODEL] stopped."
 }
