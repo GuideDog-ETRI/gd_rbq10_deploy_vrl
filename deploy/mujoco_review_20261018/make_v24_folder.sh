@@ -1,18 +1,20 @@
 #!/bin/bash
 # Export a GAST-Narrow v2.4 checkpoint (a6000 / Hangang) as a MuJoCo bundle and make its review folder.
-#   bash make_v24_folder.sh <checkpoint.pt> <tag> [folder number]
-#   e.g. bash make_v24_folder.sh ~/ckpt/v24c/412_top1.pt a6000_412 23  -> 23_narrow_v24_a6000_412/run_sim.sh
+#   bash make_v24_folder.sh <checkpoint.pt> <update> <site> [folder number]
+#   e.g. bash make_v24_folder.sh ~/ckpt/v24c/412_top1.pt 412 a6000 25  -> 25_narrow_v24_412_a6000/run_sim.sh
+#   (site last, as the Hangang folders: a6000 = onvlm2 runs, hangang = KISTI GH200 runs)
 # The checkpoint's params/ (agent.yaml, env.yaml) must sit next to it or in a parent folder (export searches upward).
 # The folder runs with NARROW=1 REAR=1 (tail Mid-360 + trunk occlusion in the head-LiDAR sidecar) and the turn course
 # by default: bash <folder>/run_sim.sh [turn_narrow_force4|turn_rooms|narrow_only|force4_narrow]. The automatic stair
 # forces follow the stairs of turn_narrow_force4 (sections.json force_x0); FORCE=0 turns them off.
 set -euo pipefail
-ck=$(realpath "${1:?checkpoint}"); tag=${2:?tag}; num=${3:-}
+ck=$(realpath "${1:?checkpoint}"); it=${2:?update}; site=${3:?site (a6000|hangang)}; num=${4:-}
+tag=${it}_${site}
 REPO=/home/user/gd_project/gd_rbq10_deploy_vrl
 # Model classes from main (as the 371 / 602 exports): the gh200 line of gast/geometry.py (cuDNN off above 65,535 rows)
 # cannot be traced to ONNX ("set_enabled_cudnn expects a bool"); the network itself is the same.
 TRAIN_ROOT=${GD_LAB_TRAIN_ROOT:-/home/user/gd_project/gd_lab_vrl}
-name=gast_narrow_v24_${tag}_$(date +%Y%m%d)
+name=gast_narrow_v24_${it}_$(date +%Y%m%d)_${site}
 cd "$REPO"
 sha=$(sha256sum "$ck" | cut -d' ' -f1)
 apptainer exec /home/user/workspace/gd_lab_isaaclab.sif env MPLCONFIGDIR=/tmp/mpl_v24 GD_LAB_TRAIN_ROOT="$TRAIN_ROOT" \
