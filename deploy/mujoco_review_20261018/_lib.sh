@@ -19,6 +19,8 @@ HERE=${HERE:?}; LOG=$HERE/logs; mkdir -p "$LOG"
 export DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/$(id -u)/gdm/Xauthority}
 export RBQ_GAST_SCAN_UDP=${RBQ_GAST_SCAN_UDP:-47610} RBQ_GAST_SCAN_LOG=$LOG/pilot_scan.log
 # GAST-Narrow v2 (NARROW=1 in the model folder): LIDAR=both|ouster|mid360|off, MARGIN=0.05..0.15 m (default 0.10).
+# GAST-Narrow v2.4 (REAR=1 in the model folder): tail Mid-360 + trunk self-occlusion in the head-LiDAR sidecar.
+# Turn course: run_sim.sh turn_rooms (simulation/mujoco/make_course_turn.py: aisle, vestibule, tight alcove, elevator).
 # Head-LiDAR map port 47612 (47610 = GAST scan, 47611 = ODM1 pose).
 export RBQ_NARROW_LIDAR_UDP=${RBQ_NARROW_LIDAR_UDP:-47612} RBQ_NARROW_MARGIN_M=${MARGIN:-0.10}
 [ "${LIDAR:-both}" = off ] && export RBQ_NARROW_LIDAR_OFF=1
@@ -52,9 +54,9 @@ cmd_start() {   # run_sim.sh [course]  (default force4)
   for i in $(seq 1 60); do [ -s "$LOG/sidecar.jsonl" ] && break; sleep 1; done   # first map samples written
   [ -s "$LOG/sidecar.jsonl" ] || { echo "[$MODEL] sidecar produced no map in 60 s; see $LOG/sidecar.out" >&2; exit 1; }
   if [ "${NARROW:-0}" = 1 ]; then   # GAST-Narrow v2: head-LiDAR (Ouster + Mid-360) obstacle map -> Pilot NLM1 port
-    echo "[$MODEL] starting the head-LiDAR sidecar (sensors ${LIDAR:-both}, margin m=${RBQ_NARROW_MARGIN_M}) ..."
+    echo "[$MODEL] starting the head-LiDAR sidecar (sensors ${LIDAR:-both}${REAR:+ + rear}, margin m=${RBQ_NARROW_MARGIN_M}) ..."
     setsid bash -c "while :; do '$REPO/build/tools/sim-state-probe' 3600 10; done | apptainer exec '$SIF' env CUDA_VISIBLE_DEVICES='' OMP_NUM_THREADS=2 \
-      '$PY' '$REPO/simulation/mujoco/sensor_sidecar/head_lidar.py' --xml '$XML' --sensors ${LIDAR:-both} --seed ${SEED:-42} \
+      '$PY' '$REPO/simulation/mujoco/sensor_sidecar/head_lidar.py' --xml '$XML' --sensors ${LIDAR:-both} ${REAR:+--rear} --seed ${SEED:-42} \
       --port $RBQ_NARROW_LIDAR_UDP --log '$LOG/head_lidar.jsonl'" > "$LOG/head_lidar.out" 2>&1 &
     echo $! > "$LOG/head_lidar.pid"
     if [ "${LIDAR:-both}" != off ]; then

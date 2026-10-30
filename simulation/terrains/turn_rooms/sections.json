@@ -1,0 +1,22 @@
+{
+ "aisle1": 3.0,
+ "aisle1_centre": 5.0,
+ "pole0": 4.5,
+ "pole1": 6.0,
+ "between_poles": 5.25,
+ "vestibule": 9.0,
+ "vestibule_centre": 9.65,
+ "aisle2_centre": 11.65,
+ "alcove": 13.675,
+ "alcove_centre_y": 1.55,
+ "elevator_door": 15.0,
+ "elevator_centre": 15.8,
+ "aisle": 1.2,
+ "free_radius": {
+  "aisle1_between_poles": 0.6,
+  "vestibule": 0.885,
+  "aisle2": 0.6,
+  "alcove": 0.475,
+  "elevator": 0.75
+ }
+}
