@@ -1,0 +1,162 @@
+{
+ "teacher_sha256": "69e7e065ee18cff88e9d7ed0876922374ae830d8ae710b04b80c576d22209c05",
+ "iteration": 602,
+ "kind": "gast_narrow_v2",
+ "policy_class": "gd_lab.gast.teacher:GastRayIrActorCritic",
+ "terrain_channels": 3,
+ "ir_channel": "input: frames[...,374:561] from the sensor sidecar (RBQ_GAST_SCAN_UDP)",
+ "frame_width": 561,
+ "actor_onnx_sha256": "7def9767e7447a1995af3629ad5bb998691bb785a69c594bcb8ab98c7816154c",
+ "encoder_onnx_sha256": "790976219e9b73b897d759e2b7dc9251bd1a455c28a02597a02e1136ccd70d9c",
+ "parity_max_abs_error": 0.001,
+ "checks": {
+  "actor_0": 5.7220458984375e-06,
+  "actor_1": 4.827976226806641e-06,
+  "actor_2": 3.2186508178710938e-06,
+  "actor_3": 1.3113021850585938e-06,
+  "actor_4": 2.86102294921875e-06,
+  "actor_5": 2.9802322387695312e-06,
+  "actor_6": 1.6689300537109375e-06,
+  "actor_7": 1.7881393432617188e-06,
+  "actor_8": 5.0067901611328125e-06,
+  "actor_9": 1.8477439880371094e-06,
+  "actor_10": 1.0132789611816406e-06,
+  "actor_11": 2.6226043701171875e-06,
+  "encoder_trajectory_700_max": 8.255243301391602e-06,
+  "encoder_parity_limit": 0.001,
+  "encoder_blackout_zero_steps": 30
+ },
+ "history_offsets": [
+  48,
+  32,
+  16,
+  8,
+  4,
+  2,
+  1,
+  0
+ ],
+ "capture_period_s": 0.1,
+ "input_note": "full unmasked course height grid + 8-step ego-aligned memory, no noise; matches GAST teacher training input; simulation diagnostic only",
+ "source_checkpoint": "/tmp/narrow_export_crstnh2e/base.pt",
+ "train_root": "/home/user/gd_project/gd_lab_vrl",
+ "camera_profile": "vendor_new",
+ "camera_contract": {
+  "profile": "vendor_new",
+  "positions": [
+   [
+    0.364,
+    0,
+    -0.024919
+   ],
+   [
+    0.26097,
+    0,
+    -0.04582
+   ],
+   [
+    -0.19515,
+    0.0065,
+    -0.0465
+   ],
+   [
+    -0.352082,
+    -1.1e-05,
+    -0.018938
+   ]
+  ],
+  "quaternions_opengl": [
+   [
+    0,
+    -0.1736482,
+    0,
+    0.9848078
+   ],
+   [
+    0,
+    0.1218693,
+    0,
+    0.9925462
+   ],
+   [
+    0,
+    0,
+    0,
+    1
+   ],
+   [
+    0.9848078,
+    0,
+    0.1736482,
+    0
+   ]
+  ],
+  "sensor_size_m": [
+   0.003896,
+   0.00214
+  ],
+  "focal_m": 0.00193,
+  "width": 80,
+  "height": 45,
+  "source_resolution": [
+   640,
+   360
+  ],
+  "depth_clip": [
+   0.15,
+   5.0
+  ],
+  "period_steps": 8,
+  "policy_dt": 0.01,
+  "render_height": 48,
+  "schema_version": 1,
+  "terrain_observation_version": 2,
+  "camera_names": [
+   "front_depth_camera0",
+   "front_depth_camera1",
+   "hind_depth_camera2",
+   "hind_depth_camera3"
+  ],
+  "channels": [
+   "depth",
+   "ir_proxy"
+  ],
+  "transform": "camera_to_trunk",
+  "camera_convention": "opengl: looks along -z, +y up",
+  "source": "RBQ SDK rbq.xml BT0-3 (v1.19.47, v1.20.0, main, nightly 41f6fac6 2026-09-09, nightly 5974087c 2026-10-04); main commit 68bc33b77719d357b4323fb88549efd905caf721, rbq.xml git blob 68ad7e0ac2d5bf181d3c6b3663310ff582894f8c",
+  "depth_semantics": "optical_axis_metres",
+  "quaternion_order": "wxyz",
+  "fov_degrees": [
+   90.531880673026,
+   58.00833537295417
+  ],
+  "fx": 39.630390143737166,
+  "fy": 40.58411214953271,
+  "cx": 40.0,
+  "cy": 22.5,
+  "frame_shape": [
+   1,
+   4,
+   2,
+   45,
+   80
+  ]
+ },
+ "camera_contract_note": "vendor_new contract of the warm-start BIVT-Ray family; the oracle reads no cameras",
+ "narrow_source": "/home/user/gd_project/archive/gd_lab_vrl_worktrees/gh200/checkpoints/gast_narrow/narrow_v23_gh200_20261029/v23_gh200_it602_top5.pt",
+ "narrow_contract": {
+  "inputs": [
+   "direct_obs[1,46]",
+   "cenet_obs[1,230]",
+   "terrain_latent[1,32]",
+   "lidar_map[1,2880] = [previous, current] 30x48, 5 cm, x -0.9..1.5, y -0.75..0.75",
+   "margin[1,1] = (m - 0.10) / 0.05, m in 0.05..0.15"
+  ],
+  "lidar_udp": "NLM1 (simulation/mujoco/sensor_sidecar/head_lidar.py)",
+  "lidar_off": "all-zero map (Pilot after 300 ms without a map)"
+ },
+ "narrow_checks": {
+  "onnx_vs_torch_max": 3.4332275390625e-05,
+  "zero_map_vs_folded_max": 5.7220458984375e-06
+ }
+}

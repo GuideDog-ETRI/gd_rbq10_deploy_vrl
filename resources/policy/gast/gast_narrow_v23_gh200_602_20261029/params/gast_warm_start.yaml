@@ -1,0 +1,40 @@
+source: /scratch/t515a05/gd_lab/report/ckpt_cum486_379_top1.pt
+source_sha256: 778b1aad55c0356975dbc8cc052944c0a3e5c66eb468cf73e0c93f96c49748e0
+source_iteration: 379
+source_task: Gd-GastNarrowV23-Rbq10-Dreamwaq-v0
+source_kind: narrow_v23_continue
+narrow_version: v2.3
+target_task: Gd-GastNarrowV23-Rbq10-Dreamwaq-v0
+ppo_optimizer: restored
+cenet_optimizer_restored: true
+copied: 79
+fresh: 0
+anchor: /scratch/t515a05/gd_lab/gd_lab_vrl/checkpoints/gast_narrow/backgapv2_6566.pt
+anchor_weight: '1.0'
+learning_rates:
+  policy: 0.0001
+  terrain: 0.0003
+terrain_levels_restored: true
+task: Gd-GastNarrowV23-Rbq10-Dreamwaq-v0
+train_arm_env: '4'
+reward_weights:
+  platform_gap_foot_drop: -2.0
+  platform_gap_crossing: 0.5
+  platform_gap_monitor: 1.0
+  platform_gap_intrusion: -3.0
+  platform_gap_clean: 0.5
+  gap_foothold_margin: -0.25
+  stair_foothold_margin: -0.2
+  gap_slot_probe: -1.0
+  stair_handle_disturbance: -1.0
+  stair_push_fall: -3.0
+  stair_push_slip: -0.2
+learning_rates_requested:
+  policy: 0.0001
+  terrain: 0.0003
+schedule: fixed
+mapper_augmentation:
+  mapper_aug_enabled: false
+  mapper_aug_ramp_steps: 50000
+  mapper_aug_clean_fraction: 0.25
+  mapper_aug_seed: 14942
