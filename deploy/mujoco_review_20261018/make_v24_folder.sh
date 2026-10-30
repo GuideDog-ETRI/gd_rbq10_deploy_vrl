@@ -9,7 +9,9 @@
 set -euo pipefail
 ck=$(realpath "${1:?checkpoint}"); tag=${2:?tag}; num=${3:-}
 REPO=/home/user/gd_project/gd_rbq10_deploy_vrl
-TRAIN_ROOT=${GD_LAB_TRAIN_ROOT:-/home/user/gd_project/archive/gd_lab_vrl_worktrees/gast_narrow_turn}
+# Model classes from main (as the 371 / 602 exports): the gh200 line of gast/geometry.py (cuDNN off above 65,535 rows)
+# cannot be traced to ONNX ("set_enabled_cudnn expects a bool"); the network itself is the same.
+TRAIN_ROOT=${GD_LAB_TRAIN_ROOT:-/home/user/gd_project/gd_lab_vrl}
 name=gast_narrow_v24_${tag}_$(date +%Y%m%d)
 cd "$REPO"
 sha=$(sha256sum "$ck" | cut -d' ' -f1)
