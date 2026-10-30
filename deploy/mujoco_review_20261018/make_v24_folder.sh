@@ -4,8 +4,8 @@
 #   e.g. bash make_v24_folder.sh ~/ckpt/v24c/412_top1.pt a6000_412 23  -> 23_narrow_v24_a6000_412/run_sim.sh
 # The checkpoint's params/ (agent.yaml, env.yaml) must sit next to it or in a parent folder (export searches upward).
 # The folder runs with NARROW=1 REAR=1 (tail Mid-360 + trunk occlusion in the head-LiDAR sidecar) and the turn course
-# by default: bash <folder>/run_sim.sh [turn_rooms|narrow_only|force4_narrow]. FORCE defaults to 0 here (the auto
-# stair forces fire by x position and would hit the turn pockets).
+# by default: bash <folder>/run_sim.sh [turn_narrow_force4|turn_rooms|narrow_only|force4_narrow]. The automatic stair
+# forces follow the stairs of turn_narrow_force4 (sections.json force_x0); FORCE=0 turns them off.
 set -euo pipefail
 ck=$(realpath "${1:?checkpoint}"); tag=${2:?tag}; num=${3:-}
 REPO=/home/user/gd_project/gd_rbq10_deploy_vrl
@@ -30,10 +30,10 @@ mkdir -p "$dir"
 cat > "$dir/run_sim.sh" <<EOF
 #!/bin/bash
 # narrow_v24_$tag -- GAST-Narrow v2.4 (from $(basename "$ck"), sha ${sha:0:8}): turn pockets / narrow passages.
-#   bash run_sim.sh [turn_rooms|narrow_only|force4_narrow]     default turn_rooms
+#   bash run_sim.sh [turn_narrow_force4|turn_rooms|narrow_only|force4_narrow]     default turn_narrow_force4
 #   LIDAR=both|ouster|mid360|off   MARGIN=0.05..0.15 (m, default 0.10)   REAR=1 (default; REAR= for no tail Mid-360)
 HERE="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"; MODEL=narrow_v24_$tag; LAUNCHER=scripts/gast/teacher/$name/run_sim_ir.sh
-NARROW=1; DEFAULT_COURSE=turn_rooms; REAR=\${REAR-1}; FORCE=\${FORCE:-0}
+NARROW=1; DEFAULT_COURSE=turn_narrow_force4; REAR=\${REAR-1}
 source "\$HERE/../_lib.sh"; run_sim "\$@"
 EOF
 chmod +x "scripts/gast/teacher/$name/run_sim_ir.sh" "$dir/run_sim.sh"
